@@ -1,0 +1,25 @@
+accelerate launch seq2seq.py \
+--mixed_precision bf16 \
+--use_lora \
+--quantization 4 \
+--constrained_generation \
+--train_tsvs examples/conll/en.conll.train.tsv \
+--dev_tsvs examples/conll/en.conll.dev.tsv \
+--test_tsvs examples/conll/en.conll.test.tsv \
+--num_beams 4 \
+--num_return_sequences 1 \
+--model_name_or_path google/flan-t5-large \
+--per_device_train_batch_size 16 \
+--gradient_accumulation_steps 1 \
+--per_device_eval_batch_size 8 \
+--learning_rate 1e-4 \
+--optim adamw \
+--lr_scheduler_type cosine \
+--num_warmup_steps 500 \
+--num_train_epochs 40 \
+--eval_every_epochs 10 \
+--max_source_length 256 \
+--max_target_length 256 \
+--output_dir results/conll/FlanT5large_QLoRA \
+--project_name SeqLabeling_w_LLMs \
+--add_labels_as_tokens

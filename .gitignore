@@ -122,3 +122,11 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+examples/conll
+examples/e3c*
+examples/*nllb200*
+
+.idea/*
+
+results/*
