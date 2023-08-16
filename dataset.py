@@ -159,7 +159,7 @@ def format_target_sentence(words: List[str], labels: List[str], is_llama_model: 
                 inside_entity = False
             prev_label = label2name(label[2:])
             target.append(
-                f"</{prev_label}>" if not is_llama_model else f" </{prev_label}> "
+                f"<{prev_label}>" if not is_llama_model else f" <{prev_label}> "
             )
             target.append(word)
             prev_is_word = True
