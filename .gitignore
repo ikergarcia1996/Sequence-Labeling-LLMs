@@ -130,3 +130,7 @@ examples/*nllb200*
 .idea/*
 
 results/*
+
+other/*
+
+*.ipynb

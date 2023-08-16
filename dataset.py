@@ -285,7 +285,11 @@ def prepare_sl(
         if len(prompt) >= len(y_tokenized["input_ids"]):
             raise ValueError(
                 f"Prompt is longer than the input, something went wrong. Prompt: {prompt}, input:"
-                f" {y_tokenized['input_ids']}"
+                f" {y_tokenized['input_ids']}.\n"
+                f"Prompt: {tokenizer.decode(prompt)}\n"
+                f"Input: {tokenizer.decode(y_tokenized['input_ids'])}. \n"
+                f"The most probable cause is that the input is too long and was truncated,"
+                f" increase the max_source_len and try again."
             )
 
         # Create the weight mask

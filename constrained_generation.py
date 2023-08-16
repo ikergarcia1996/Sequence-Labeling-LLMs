@@ -1,6 +1,7 @@
 from transformers import PreTrainedModel, BatchEncoding
 from typing import List, Dict, Union
 import torch
+import copy
 
 
 def compute_words_ids(tokenizer, sentence):
@@ -727,19 +728,31 @@ class BeamSent:
     def is_completed(self):
         return all([node.is_completed() for node in self.nodes])
 
-    def update(self, logits):
+    def update(self, logits) -> List[int]:
+        beam_idx = []
         new_nodes = []
-        for node_logits, node in zip(logits, self.nodes):
+        for node_id, (node_logits, node) in enumerate(zip(logits, self.nodes)):
             new_nodes.extend(node.add_token(node_logits))
+            beam_idx.extend([node_id] * len(node_logits))
 
         # for node in new_nodes:
         #    print(node.report_state())
         # print("\n")
         self.nodes = new_nodes
 
-        self.nodes = sorted(self.nodes, key=lambda x: x.score, reverse=True)[
-            : self.num_beams
-        ]
+        # self.nodes = sorted(self.nodes, key=lambda x: x.score, reverse=True)[
+        #    : self.num_beams
+        # ]
+
+        # Get idx of nodes with highest score
+        sort_idx = torch.argsort(
+            torch.tensor([node.score for node in self.nodes]), descending=True
+        )[0 : self.num_beams]
+
+        # Sort nodes by score
+        self.nodes = [self.nodes[i] for i in sort_idx]
+
+        return [beam_idx[i] for i in sort_idx]
 
     def get_decoder_contexts(self):
         return torch.vstack([node.get_decoder_context() for node in self.nodes])
@@ -763,11 +776,10 @@ def run_model(
         input_ids=input_ids, **decoder_args
     )
 
-    # print(f"run model inputs:")
-    # print(input_ids.size())
-
+    # print(gen_inputs["input_ids"].size())
     decoder_outputs = model(
         **gen_inputs,
+        return_dict=True,
     )
 
     decoder_args = model._update_model_kwargs_for_generation(
@@ -795,6 +807,7 @@ def constrained_beam_search(
     num_beams: int = 4,
     num_return_sequences: int = 1,
     forced_bos_token_id: int = None,
+    use_cache: bool = True,
 ):
     if num_return_sequences < 0:
         raise ValueError(
@@ -865,28 +878,48 @@ def constrained_beam_search(
         encoder_mask = model_inputs["attention_mask"].repeat_interleave(
             repeats=num_beams, dim=0
         )
+
+        kwargs = {
+            "attention_mask": encoder_mask,
+            "num_beams": num_beams,
+            "decoder_start_token_id": model.generation_config.decoder_start_token_id,
+        }
+        generation_config = copy.deepcopy(model.generation_config)
+        model_kwargs = generation_config.update(**kwargs)
+        model_kwargs["use_cache"] = use_cache
+
+        generation_config.validate()
+        model._validate_model_kwargs(model_kwargs.copy())
+
+        inputs_tensor, model_input_name, model_kwargs = model._prepare_model_inputs(
+            encoder_inputs, model.generation_config.decoder_start_token_id, model_kwargs
+        )
+
+        if model.config.is_encoder_decoder and "encoder_outputs" not in model_kwargs:
+            # if model is encoder decoder encoder_outputs are created
+            # and added to `model_kwargs`
+            model_kwargs = model._prepare_encoder_decoder_kwargs_for_generation(
+                inputs_tensor, model_kwargs, model_input_name
+            )
+
+        # 5. Prepare `input_ids` which will be used for auto-regressive generation
         if model.config.is_encoder_decoder:
-            encoder_output = model.get_encoder()(
-                input_ids=encoder_inputs, attention_mask=encoder_mask
+            input_ids, model_kwargs = model._prepare_decoder_input_ids_for_generation(
+                batch_size=8,
+                model_input_name=model_input_name,
+                model_kwargs=model_kwargs,
+                decoder_start_token_id=generation_config.decoder_start_token_id,
+                bos_token_id=generation_config.bos_token_id,
+                device=inputs_tensor.device,
             )
         else:
-            encoder_output = model(
-                input_ids=encoder_inputs, attention_mask=encoder_mask
+            input_ids = (
+                inputs_tensor
+                if model_input_name == "input_ids"
+                else model_kwargs.pop("input_ids")
             )
 
-        # Build the decoder arguments
-
-        decoder_args = {
-            "attention_mask": encoder_mask,
-            "use_cache": False,
-            "encoder_outputs": encoder_output,
-        }
-
-        if forced_bos_token_id is not None:
-            decoder_args["decoder_input_ids"] = torch.tensor(
-                [[forced_bos_token_id]] * len(model_inputs.input_ids)
-            ).to(model.device)
-
+        first = True
         while not all([sent.is_completed() for sent in sentence_beams]):
             # Get the input ids for the decoder.
             # print(f"len sentence beams: {len(sentence_beams)}")
@@ -897,16 +930,35 @@ def constrained_beam_search(
             # print(input_ids.size())
             # print(input_ids)
             # Run the model
-            logits, decoder_args = run_model(
+            logits, model_kwargs = run_model(
                 model=model,
                 input_ids=input_ids,
-                decoder_args=decoder_args,
+                decoder_args=model_kwargs,
                 is_encoder_decoder=model.config.is_encoder_decoder,
             )
 
             # Update the beams
+            beam_idx = []
             for sent_no, sent in enumerate(sentence_beams):
-                sent.update(logits[sent_no * num_beams : (sent_no + 1) * num_beams])
+                sent_idx = sent.update(
+                    logits[sent_no * num_beams : (sent_no + 1) * num_beams]
+                )
+                beam_idx.extend(sent_idx)
+
+            if model_kwargs["past_key_values"] is not None:
+                model_kwargs["past_key_values"] = model._reorder_cache(
+                    model_kwargs["past_key_values"], torch.tensor(beam_idx)
+                )
+            else:
+                if first:
+                    print(
+                        f"Warning! model_kwargs['past_key_values'] is None, this means that we wont cache the past states. "
+                        f"This will slow down the generation. This is not expected if use_cache=True. "
+                        f"You have set use_cache={use_cache}. If you set use_cache=True and you still see this message "
+                        f"it probably means that your model does not support caching."
+                    )
+
+            first = False
 
         return torch.vstack(
             [
