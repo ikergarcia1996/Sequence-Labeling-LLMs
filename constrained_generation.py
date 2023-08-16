@@ -732,8 +732,9 @@ class BeamSent:
         beam_idx = []
         new_nodes = []
         for node_id, (node_logits, node) in enumerate(zip(logits, self.nodes)):
-            new_nodes.extend(node.add_token(node_logits))
-            beam_idx.extend([node_id] * len(node_logits))
+            ns = node.add_token(node_logits)
+            new_nodes.extend(ns)
+            beam_idx.extend([node_id] * len(ns))
 
         # for node in new_nodes:
         #    print(node.report_state())
