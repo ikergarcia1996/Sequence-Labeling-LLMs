@@ -232,7 +232,7 @@ def parse_args():
     parser.add_argument(
         "--lora_r",
         type=int,
-        default=8,
+        default=16,
         help="The r parameter for LoRA. This is the number of bits to quantize the weights to.",
     )
 
@@ -256,7 +256,7 @@ def parse_args():
         nargs="+",
         default=None,
         help="The modules to apply LoRA to. This is a comma-separated list of module names. "
-        "If not specified we will try to use huggingface defaults",
+        "If not specified we will try to use all the modules compatible with LoRA.",
     )
 
     parser.add_argument(

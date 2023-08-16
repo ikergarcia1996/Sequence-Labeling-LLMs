@@ -20,6 +20,31 @@ from transformers.models.auto.modeling_auto import (
 )
 
 
+def find_all_linear_names(model, quantization: Optional[int] = None):
+    if quantization is None:
+        cls = torch.nn.Linear
+    elif quantization == 4:
+        from bitsandbytes.nn import Linear4bit
+
+        cls = Linear4bit
+    elif quantization == 8:
+        from bitsandbytes.nn import Linear8bitLt
+
+        cls = Linear8bitLt
+    else:
+        raise ValueError(f"Unknown quantization type: {quantization}")
+
+    lora_module_names = set()
+    for name, module in model.named_modules():
+        if isinstance(module, cls):
+            names = name.split(".")
+            lora_module_names.add(names[0] if len(names) == 1 else names[-1])
+
+    if "lm_head" in lora_module_names:  # needed for 16-bit
+        lora_module_names.remove("lm_head")
+    return list(lora_module_names)
+
+
 def get_trainable_parameters(model: PreTrainedModel) -> Tuple[int, int, float]:
     """
     Prints the number of trainable parameters in the model.
@@ -387,10 +412,11 @@ def load_model_for_training(
                 lora_target_modules is not None and len(lora_target_modules) == 0
             ):
                 logging.warning(
-                    "No target modules provided,  will use the default modules for the"
-                    " model in huggingface PEFT library. "
+                    "No target modules provided,  will use all the modules compatible with LORA."
                 )
-                lora_target_modules = None
+                lora_target_modules = find_all_linear_names(
+                    model, quantization=quantization
+                )
 
             config = LoraConfig(
                 r=lora_r,
