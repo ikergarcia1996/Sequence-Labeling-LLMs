@@ -944,6 +944,9 @@ def constrained_beam_search(
                 sent_idx = sent.update(
                     logits[sent_no * num_beams : (sent_no + 1) * num_beams]
                 )
+                sent_idx = [
+                    i + (num_beams * sent_no) for i in sent_idx
+                ]  # Adjust indices for each sentence in batch
                 beam_idx.extend(sent_idx)
 
             if model_kwargs["past_key_values"] is not None:
