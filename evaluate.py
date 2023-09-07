@@ -161,24 +161,37 @@ def evaluate_most_probable(
             gold_labels.append(sentence_gold_labels)
 
     with open(f"{output_name}.txt", "w", encoding="utf8") as output_file:
-        print(
-            classification_report(
+        try:
+            cr = classification_report(
                 y_true=gold_labels, y_pred=predicted_labels, digits=4, zero_division="1"
-            ),
+            )
+        except ValueError as e:
+            cr = str(e)
+        print(
+            cr,
             file=output_file,
         )
-        micro_f1 = f1_score(
-            y_true=gold_labels,
-            y_pred=predicted_labels,
-            average="micro",
-            zero_division="1",
-        )
-        macro_f1 = f1_score(
-            y_true=gold_labels,
-            y_pred=predicted_labels,
-            average="macro",
-            zero_division="1",
-        )
+        try:
+            micro_f1 = f1_score(
+                y_true=gold_labels,
+                y_pred=predicted_labels,
+                average="micro",
+                zero_division="1",
+            )
+        except ValueError as e:
+            print(f"Error calculating micro f1: {e}")
+            micro_f1 = 0
+
+        try:
+            macro_f1 = f1_score(
+                y_true=gold_labels,
+                y_pred=predicted_labels,
+                average="macro",
+                zero_division="1",
+            )
+        except ValueError as e:
+            print(f"Error calculating macro f1: {e}")
+            macro_f1 = 0
         print(f"Micro F1: {micro_f1}", file=output_file)
         print(f"Macro F1: {macro_f1}", file=output_file)
 
@@ -226,12 +239,16 @@ def evaluate_best_prediction(
                         * (len(sentence_gold_words) - len(sentence_predicted_words))
                     )
 
-                micro_f1 = f1_score(
-                    y_true=[sentence_gold_labels],
-                    y_pred=[sentence_predicted_labels],
-                    average="micro",
-                    zero_division="1",
-                )
+                try:
+                    micro_f1 = f1_score(
+                        y_true=[sentence_gold_labels],
+                        y_pred=[sentence_predicted_labels],
+                        average="micro",
+                        zero_division="1",
+                    )
+                except ValueError as e:
+                    print(f"Error calculating micro f1: {e}")
+                    micro_f1 = 0
 
                 if micro_f1 > best_pred_f1:
                     best_pred = i
@@ -274,24 +291,37 @@ def evaluate_best_prediction(
             gold_labels.append(sentence_gold_labels)
 
     with open(f"{output_name}.txt", "w", encoding="utf8") as output_file:
-        print(
-            classification_report(
+        try:
+            cr = classification_report(
                 y_true=gold_labels, y_pred=predicted_labels, digits=4, zero_division="1"
-            ),
+            )
+        except ValueError as e:
+            cr = str(e)
+        print(
+            cr,
             file=output_file,
         )
-        micro_f1 = f1_score(
-            y_true=gold_labels,
-            y_pred=predicted_labels,
-            average="micro",
-            zero_division="1",
-        )
-        macro_f1 = f1_score(
-            y_true=gold_labels,
-            y_pred=predicted_labels,
-            average="macro",
-            zero_division="1",
-        )
+        try:
+            micro_f1 = f1_score(
+                y_true=gold_labels,
+                y_pred=predicted_labels,
+                average="micro",
+                zero_division="1",
+            )
+        except ValueError as e:
+            print(f"Error calculating micro f1: {e}")
+            micro_f1 = 0
+
+        try:
+            macro_f1 = f1_score(
+                y_true=gold_labels,
+                y_pred=predicted_labels,
+                average="macro",
+                zero_division="1",
+            )
+        except ValueError as e:
+            print(f"Error calculating macro f1: {e}")
+            macro_f1 = 0
         print(f"Micro F1: {micro_f1}", file=output_file)
         print(f"Macro F1: {macro_f1}", file=output_file)
 

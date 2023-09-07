@@ -50,19 +50,6 @@ def gen_batch(iterable, n=1):
 
 
 def experiment_done(experiment_dir: str, test_tsvs: List[str]):
-    for lang in ["en", "es", "fr", "it"]:
-        for filename in test_tsvs:
-            if (
-                filename
-                == f"/ikerlariak/igarcia945/antidote_mt5-corpus/sequence-labeling-evaluation-datasets/{lang}/{lang}-neoplasm-test.tsv"
-            ):
-                test_tsvs.append(
-                    f"/ikerlariak/igarcia945/antidote_mt5-corpus/sequence-labeling-evaluation-datasets/{lang}/{lang}-glaucoma-test.tsv"
-                )
-                test_tsvs.append(
-                    f"/ikerlariak/igarcia945/antidote_mt5-corpus/sequence-labeling-evaluation-datasets/{lang}/{lang}-mixed-test.tsv"
-                )
-
     for test_tsv in test_tsvs:
         test_name = os.path.splitext(os.path.basename(test_tsv))[0]
         if not os.path.exists(os.path.join(experiment_dir, f"{test_name}.txt")):
@@ -245,7 +232,7 @@ def parse_args():
     parser.add_argument(
         "--lora_r",
         type=int,
-        default=8,
+        default=16,
         help="The r parameter for LoRA. This is the number of bits to quantize the weights to.",
     )
 
@@ -269,7 +256,7 @@ def parse_args():
         nargs="+",
         default=None,
         help="The modules to apply LoRA to. This is a comma-separated list of module names. "
-        "If not specified we will try to use huggingface defaults",
+        "If not specified we will try to use all the modules compatible with LoRA.",
     )
 
     parser.add_argument(
@@ -622,338 +609,6 @@ def evaluate(
     return f1
 
 
-def evaluate_constrained_unconstrained(
-    dataloader: DataLoader,
-    accelerator: Accelerator,
-    model: PreTrainedModel,
-    tokenizer: PreTrainedTokenizerBase,
-    max_length: int,
-    num_beams: int,
-    num_return_sequences: int,
-    output_dir: str,
-    stage: str = "dev",
-    epoch: int = -1,
-    train_step: int = -1,
-    forced_bos_token: int = None,
-):
-    print(f"***** Evaluating {dataloader.dataset.file_path} *****")
-    if epoch != -1:
-        print(f"  Epoch = {epoch}")
-        print(f"  Train step = {train_step}")
-    print(f"  Num examples = {len(dataloader.dataset)}")
-    print(
-        f"  Gen kwargs = "
-        f"{{'constrained_generation' : True & False, "
-        f"'num_return_sequences': {num_return_sequences}, "
-        f"'num_beams': {num_beams}, "
-        f"'max_length': {max_length}}}"
-    )
-    print()
-    os.makedirs(output_dir, exist_ok=True)
-    model.eval()
-    constrained_model_outputs_txt: List[List[str]] = []
-    model_outputs_txt: List[List[str]] = []
-    gold_txt: List[str] = []
-    original_txt: List[str] = []
-    model_inputs_txt: List[str] = []
-
-    samples_seen: int = 0
-
-    test_name = os.path.splitext(os.path.basename(dataloader.dataset.file_path))[0]
-    if stage == "dev":
-        filename = f"{test_name}_epoch_{epoch}_step_{train_step}"
-    else:
-        filename = f"{test_name}"
-
-    with open(
-        os.path.join(output_dir, f"{filename}.constrained.jsonl"), "w", encoding="utf8"
-    ) as constrained_f, open(
-        os.path.join(output_dir, f"{filename}.jsonl"), "w", encoding="utf8"
-    ) as f:
-        for step, batch in enumerate(
-            tqdm(
-                dataloader,
-                disable=not accelerator.is_local_main_process,
-                ascii=True,
-                desc=f"{os.path.splitext(os.path.basename(dataloader.dataset.file_path))[0]}",
-            )
-        ):
-            constrained_generated_tokens = constrained_beam_search(
-                model_inputs=batch,
-                model=accelerator.unwrap_model(model),
-                start_labels_ids=dataloader.dataset.start_labels_ids,
-                end_labels_ids=dataloader.dataset.end_labels_ids,
-                start_labels_names=list(
-                    range(len(dataloader.dataset.start_labels_ids))
-                ),
-                end_labels_names=list(range(len(dataloader.dataset.end_labels_ids))),
-                pad_token_id=tokenizer.pad_token_id,
-                eos_token_id=tokenizer.eos_token_id,
-                max_length=max_length,
-                num_beams=num_beams,
-                num_return_sequences=num_return_sequences,
-                forced_bos_token_id=forced_bos_token,
-            )
-
-            constrained_generated_tokens = (
-                accelerator.gather(
-                    accelerator.pad_across_processes(
-                        constrained_generated_tokens,
-                        dim=1,
-                        pad_index=tokenizer.pad_token_id,
-                    )
-                )
-                .cpu()
-                .tolist()
-            )
-
-            original_sentences = (
-                accelerator.gather(
-                    accelerator.pad_across_processes(
-                        batch.original_sentence_ids,
-                        dim=1,
-                        pad_index=tokenizer.pad_token_id,
-                    )
-                )
-                .cpu()
-                .tolist()
-            )
-
-            input_tokens = accelerator.gather(
-                accelerator.pad_across_processes(
-                    batch.input_ids,
-                    dim=1,
-                    pad_index=tokenizer.pad_token_id,
-                )
-            )
-
-            gold_tokens = (
-                accelerator.gather(
-                    accelerator.pad_across_processes(
-                        batch.labeled_sentence_ids,
-                        dim=1,
-                        pad_index=tokenizer.pad_token_id,
-                    )
-                )
-                .cpu()
-                .tolist()
-            )
-
-            generated_tokens = unconstrained_beam_search(
-                model_inputs=batch,
-                model=accelerator.unwrap_model(model),
-                max_length=max_length,
-                num_beams=num_beams,
-                num_return_sequences=num_return_sequences,
-                forced_bos_token_id=forced_bos_token,
-            )
-
-            generated_tokens = (
-                accelerator.gather(
-                    accelerator.pad_across_processes(
-                        generated_tokens,
-                        dim=1,
-                        pad_index=tokenizer.pad_token_id,
-                    )
-                )
-                .cpu()
-                .tolist()
-            )
-
-            if accelerator.is_local_main_process:
-                if accelerator.num_processes > 1:
-                    # Remove duplicated in last batch if we are in a distributed setting
-                    if step == len(dataloader) - 1:
-                        constrained_generated_tokens = constrained_generated_tokens[
-                            : (len(dataloader.dataset) - samples_seen)
-                            * num_return_sequences
-                        ]
-                        generated_tokens = generated_tokens[
-                            : (len(dataloader.dataset) - samples_seen)
-                            * num_return_sequences
-                        ]
-                        gold_tokens = gold_tokens[
-                            : (len(dataloader.dataset) - samples_seen)
-                        ]
-                        original_sentences = original_sentences[
-                            : (len(dataloader.dataset) - samples_seen)
-                        ]
-                        input_tokens = input_tokens[
-                            : (len(dataloader.dataset) - samples_seen)
-                        ]
-                    else:
-                        samples_seen += len(batch)
-
-                constrained_generated_tokens = list(
-                    gen_batch(
-                        tokenizer.batch_decode(
-                            constrained_generated_tokens,
-                            skip_special_tokens=True,
-                            clean_up_tokenization_spaces=False,
-                        ),
-                        n=num_return_sequences,
-                    )
-                )
-
-                generated_tokens = list(
-                    gen_batch(
-                        tokenizer.batch_decode(
-                            generated_tokens,
-                            skip_special_tokens=True,
-                            clean_up_tokenization_spaces=False,
-                        ),
-                        n=num_return_sequences,
-                    )
-                )
-
-                gold_tokens = tokenizer.batch_decode(
-                    gold_tokens,
-                    skip_special_tokens=True,
-                    clean_up_tokenization_spaces=False,
-                )
-
-                original_sentences = tokenizer.batch_decode(
-                    original_sentences,
-                    skip_special_tokens=True,
-                    clean_up_tokenization_spaces=False,
-                )
-
-                input_tokens = tokenizer.batch_decode(
-                    input_tokens,
-                    skip_special_tokens=False,
-                    clean_up_tokenization_spaces=False,
-                )
-
-                constrained_model_outputs_txt.extend(constrained_generated_tokens)
-                model_outputs_txt.extend(generated_tokens)
-                gold_txt.extend(gold_tokens)
-                original_txt.extend(original_sentences)
-                model_inputs_txt.extend(input_tokens)
-                # print(
-                #    f"len constrained_generated_tokens: {len(constrained_generated_tokens)}"
-                # )
-                # print(f"len generated_tokens: {len(generated_tokens)}")
-                # print(f"len gold_tokens: {len(gold_tokens)}")
-                # print(len(original_sentences))
-                for prediction, gold, orig, model_input_txt in zip(
-                    constrained_generated_tokens,
-                    gold_tokens,
-                    original_sentences,
-                    model_inputs_txt,
-                ):
-                    print(
-                        json.dumps(
-                            {
-                                "model_input": model_input_txt,
-                                "input_sentence": orig,
-                                "prediction": prediction,
-                                "gold": gold,
-                            }
-                        ),
-                        file=constrained_f,
-                    )
-
-                for prediction, gold, orig, model_input_txt in zip(
-                    generated_tokens, gold_tokens, original_sentences, model_inputs_txt
-                ):
-                    print(
-                        json.dumps(
-                            {
-                                "model_input": model_input_txt,
-                                "input_sentence": orig,
-                                "prediction": prediction,
-                                "gold": gold,
-                            }
-                        ),
-                        file=f,
-                    )
-
-                if step % 100 == 0:
-                    constrained_f.flush()
-                    f.flush()
-
-        accelerator.wait_for_everyone()
-
-    # f1, f1_upperbound, f1_constrained, f1_upperbound_constrained = (-1, -1, -1, -1)
-    f1, f1_constrained = (-1, -1)
-    if accelerator.is_main_process:
-        f1_constrained = evaluate_most_probable(
-            predictions=constrained_model_outputs_txt,
-            gold=gold_txt,
-            output_name=os.path.join(output_dir, f"{filename}.constrained"),
-            task_labels=dataloader.dataset.task_labels,
-        )
-
-        # f1_upperbound_constrained = evaluate_best_prediction(
-        #    predictions=constrained_model_outputs_txt,
-        #    gold=gold_txt,
-        #    output_name=os.path.join(output_dir, f"{filename}.constrained.upperbound"),
-        #    task_labels=dataloader.dataset.task_labels,
-        # )
-
-        if stage == "dev":
-            wandb.log(
-                {
-                    f"Val/{test_name}/f1_constrained": f1_constrained,
-                    # f"Val/{test_name}/f1_upperbound_constrained": f1_upperbound_constrained,
-                    "epoch": epoch,
-                    "step": train_step,
-                }
-            )
-        else:
-            wandb.log(
-                {
-                    f"{test_name}/f1_constrained": f1_constrained,
-                    # f"{test_name}/f1_upperbound_constrained": f1_upperbound_constrained,
-                }
-            )
-
-        print(
-            f"\n{test_name}\n"
-            f"  -- f1_constrained: {f1_constrained}.\n"
-            # f"  -- f1_upperbound_constrained: {f1_upperbound_constrained}\n"
-        )
-
-        f1 = evaluate_most_probable(
-            predictions=model_outputs_txt,
-            gold=gold_txt,
-            output_name=os.path.join(output_dir, f"{test_name}"),
-            task_labels=dataloader.dataset.task_labels,
-        )
-
-        # f1_upperbound = evaluate_best_prediction(
-        #    predictions=model_outputs_txt,
-        #    gold=gold_txt,
-        #    output_name=os.path.join(output_dir, f"{test_name}.upperbound"),
-        #    task_labels=dataloader.dataset.task_labels,
-        # )
-
-        if stage == "dev":
-            wandb.log(
-                {
-                    f"Val/{test_name}/f1": f1,
-                    # f"Val/{test_name}/f1_upperbound": f1_upperbound,
-                    "epoch": epoch,
-                    "step": train_step,
-                }
-            )
-        else:
-            wandb.log(
-                {
-                    f"{test_name}/f1": f1,
-                    # f"{test_name}/f1_upperbound": f1_upperbound,
-                }
-            )
-
-        print(
-            f"\n{test_name}\n"
-            f"  -- f1: {f1}.\n"
-            # f"  -- f1_upperbound: {f1_upperbound}\n"
-        )
-
-    return f1_constrained
-
-
 def seq2seq(
     train_tsvs: List[str],
     dev_tsvs: List[str],
@@ -1097,6 +752,8 @@ def seq2seq(
             force_auto_device_map=force_auto_device_map,
             use_gradient_checkpointing=quantization is not None or use_lora,
         )
+
+        is_llama_model = model.config.model_type.lower() == "llama"
         print(f"Model loaded!")
 
         if source_lang:
@@ -1130,6 +787,7 @@ def seq2seq(
         print(f"Loading training dataset from {train_tsvs}")
         train_dataloader = get_dataloader(
             tokenizer=tokenizer,
+            is_llama_model=is_llama_model,
             filenames=train_tsvs,
             batch_size=per_device_train_batch_size,
             max_source_len=max_source_length,
@@ -1137,7 +795,7 @@ def seq2seq(
             is_encoder_decoder=model.config.is_encoder_decoder,
             train=True,
             input_prompt=None if prompt is None else prompt,
-            num_workers=os.cpu_count(),
+            num_workers=min(os.cpu_count(), 8),
             add_labels_as_context=add_labels_as_prompt,
         )
 
@@ -1150,6 +808,7 @@ def seq2seq(
             val_dataloaders.append(
                 get_dataloader(
                     tokenizer=tokenizer,
+                    is_llama_model=is_llama_model,
                     filenames=[dev_tsv],
                     batch_size=per_device_eval_batch_size,
                     max_source_len=max_source_length,
@@ -1157,7 +816,7 @@ def seq2seq(
                     is_encoder_decoder=model.config.is_encoder_decoder,
                     train=False,
                     input_prompt=None if prompt is None else prompt,
-                    num_workers=os.cpu_count(),
+                    num_workers=min(os.cpu_count(), 8),
                     add_labels_as_context=add_labels_as_prompt,
                 )
             )
@@ -1259,9 +918,11 @@ def seq2seq(
         print(f"  Total batch size = {total_batch_size}")
         print(f"  Total optimization steps = {max_train_steps}")
         print(f"  Learning rate = {learning_rate}")
+        print(f"  Optimizer = {optim}")
         print(f"  Weight decay = {weight_decay}")
         print(f"  Scheduler = {lr_scheduler_type}")
         print(f"  Model = {model_name_or_path}")
+        print(f"  is_llama_model = {is_llama_model}")
         print(f"  Mixed Precision = {accelerator.mixed_precision}")
         print(f"  Num GPUs = {accelerator.num_processes}")
         print(f"  Seed = {seed}")
@@ -1589,6 +1250,7 @@ def seq2seq(
             lora_weights_name_or_path=lora_weights_name_or_path,
             force_auto_device_map=force_auto_device_map,
         )
+        is_llama_model = model.config.model_type.lower() == "llama"
 
         if source_lang:
             try:
@@ -1617,6 +1279,7 @@ def seq2seq(
             print(f"Testing on {test_tsv}...")
             test_dataloader = get_dataloader(
                 tokenizer=tokenizer,
+                is_llama_model=is_llama_model,
                 filenames=[test_tsv],
                 batch_size=per_device_eval_batch_size,
                 max_source_len=max_source_length,
@@ -1624,7 +1287,7 @@ def seq2seq(
                 is_encoder_decoder=model.config.is_encoder_decoder,
                 train=False,
                 input_prompt=None if prompt is None else prompt,
-                num_workers=os.cpu_count(),
+                num_workers=min(os.cpu_count(), 8),
                 add_labels_as_context=add_labels_as_prompt,
             )
 

@@ -122,13 +122,16 @@ def compute_words_ids(tokenizer: PreTrainedTokenizerBase, sentence: str):
     return words_ids
 
 
-def format_target_sentence(words: List[str], labels: List[str]):
+def format_target_sentence(words: List[str], labels: List[str], is_llama_model: bool):
     """
        Format target sentence for seq2seq models
     Args:
         words: ["Obama","went","to","New","York", "."]
-        labels: # ["B-PER","O","O","B-LOC","I-LOC","O"]
-    Returns: <Person>Obama</Person>went to<Location>New York</Location>.
+        labels: ["B-PER","O","O","B-LOC","I-LOC","O"]
+        is_llama_model: If True, add spaces around tags
+    Returns: <Person>Obama</Person>went to<Location>New York</Location>. if is_llama_model is False
+             <Person> Obama </Person> went to <Location> New York </Location> . if is_llama_model is True
+
     """
 
     target = []
@@ -138,7 +141,9 @@ def format_target_sentence(words: List[str], labels: List[str]):
     for word, label in zip(words, labels):
         if label == "O":
             if inside_entity:
-                target.append(f"</{prev_label}>")
+                target.append(
+                    f"</{prev_label}>" if not is_llama_model else f" </{prev_label}> "
+                )
                 prev_is_word = False
                 inside_entity = False
             if prev_is_word:
@@ -147,11 +152,15 @@ def format_target_sentence(words: List[str], labels: List[str]):
             prev_is_word = True
         elif label.startswith("B-"):
             if inside_entity:
-                target.append(f"</{prev_label}>")
+                target.append(
+                    f"</{prev_label}>" if not is_llama_model else f" </{prev_label}> "
+                )
                 prev_is_word = False
                 inside_entity = False
             prev_label = label2name(label[2:])
-            target.append(f"<{prev_label}>")
+            target.append(
+                f"<{prev_label}>" if not is_llama_model else f" <{prev_label}> "
+            )
             target.append(word)
             prev_is_word = True
             inside_entity = True
@@ -166,13 +175,16 @@ def format_target_sentence(words: List[str], labels: List[str]):
             )
 
     if inside_entity:
-        target.append(f"</{prev_label}>")
+        target.append(
+            f"</{prev_label}>" if not is_llama_model else f" </{prev_label}> "
+        )
 
-    return " ".join(words), "".join(target)
+    return " ".join(words).strip(), "".join(target).strip()
 
 
 def prepare_sl(
     tokenizer: PreTrainedTokenizerBase,
+    is_llama_model: bool,
     words: List[str],
     labels: List[str],
     max_source_len: int,
@@ -185,6 +197,7 @@ def prepare_sl(
     Prepare data for seq2seq model
     Args:
         tokenizer: Model tokenizer
+        is_llama_model: If True, add spaces around tags
         words: List of words in the sentence we want to label
         labels: List of gold labels for each word
         max_source_len: Max length of the source sentence
@@ -201,7 +214,9 @@ def prepare_sl(
         - words_ids: Words ids for each token
     """
 
-    source_sentence, target_sentence = format_target_sentence(words, labels)
+    source_sentence, target_sentence = format_target_sentence(
+        words, labels, is_llama_model
+    )
 
     encoder_inputs = (
         f"{input_prompt.strip(' ')} {source_sentence.strip(' ')}"
@@ -285,7 +300,11 @@ def prepare_sl(
         if len(prompt) >= len(y_tokenized["input_ids"]):
             raise ValueError(
                 f"Prompt is longer than the input, something went wrong. Prompt: {prompt}, input:"
-                f" {y_tokenized['input_ids']}"
+                f" {y_tokenized['input_ids']}.\n"
+                f"Prompt: {tokenizer.decode(prompt)}\n"
+                f"Input: {tokenizer.decode(y_tokenized['input_ids'])}. \n"
+                f"The most probable cause is that the input is too long and was truncated,"
+                f" increase the max_source_len and try again."
             )
 
         # Create the weight mask
@@ -336,6 +355,7 @@ def batch(iterable, n=1) -> iter:
 
 def batch_tokenization(
     tokenizer: PreTrainedTokenizerBase,
+    is_llama_model: bool,
     max_source_len: int,
     max_target_len: int,
     is_encoder_decoder: bool,
@@ -354,6 +374,7 @@ def batch_tokenization(
         dataset.append(
             prepare_sl(
                 tokenizer,
+                is_llama_model,
                 words,
                 labels,
                 max_source_len,
@@ -371,6 +392,7 @@ class SequenceLabellingDataset(Dataset):
     def __init__(
         self,
         tokenizer: PreTrainedTokenizerBase,
+        is_llama_model: bool,
         file_path: str,
         max_source_len: int,
         max_target_len: int,
@@ -414,6 +436,7 @@ class SequenceLabellingDataset(Dataset):
                 batch_tokenization,
                 zip(
                     itertools.repeat(tokenizer),
+                    itertools.repeat(is_llama_model),
                     itertools.repeat(max_source_len),
                     itertools.repeat(max_target_len),
                     itertools.repeat(is_encoder_decoder),
@@ -638,6 +661,7 @@ class DataCollatorForSeq2Seq:
 
 def get_dataloader(
     tokenizer,
+    is_llama_model,
     filenames,
     batch_size,
     max_source_len,
@@ -651,6 +675,7 @@ def get_dataloader(
     if len(filenames) == 1:
         dataset = SequenceLabellingDataset(
             tokenizer=tokenizer,
+            is_llama_model=is_llama_model,
             file_path=filenames[0],
             max_source_len=max_source_len,
             max_target_len=max_target_len,
@@ -683,6 +708,7 @@ def get_dataloader(
             datasets.append(
                 SequenceLabellingDataset(
                     tokenizer=tokenizer,
+                    is_llama_model=is_llama_model,
                     file_path=filename,
                     max_source_len=max_source_len,
                     max_target_len=max_target_len,
