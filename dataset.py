@@ -277,6 +277,7 @@ def prepare_sl(
             if model_inputs["input_ids"][-1] != tokenizer.eos_token_id:
                 model_inputs["input_ids"].append(tokenizer.eos_token_id)
                 model_inputs["attention_mask"].append(1)
+                y_tokenized["input_ids"].append(tokenizer.eos_token_id)
         else:
             # Remove the last token if it is an eos token
             if model_inputs["input_ids"][-1] == tokenizer.eos_token_id:
@@ -690,7 +691,7 @@ def get_dataloader(
             tokenizer,
             padding=True,
             label_pad_token_id=-100,
-            pad_to_multiple_of=8,  # May be faster on some hardware
+            pad_to_multiple_of=None,  # = 8 May be faster on some hardware
         )
         dataloader = DataLoader(
             dataset,
@@ -724,7 +725,7 @@ def get_dataloader(
             tokenizer,
             padding=True,
             label_pad_token_id=tokenizer.pad_token_id,
-            pad_to_multiple_of=8,  # May be faster on some hardware
+            pad_to_multiple_of=None,  # = 8 May be faster on some hardware
         )
 
         concatenated_dataset = ConcatDataset(datasets)
