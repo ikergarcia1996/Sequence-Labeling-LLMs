@@ -266,6 +266,7 @@ def load_model_for_training(
             )
             else False
         ),
+        legacy=True,
     )
 
     if "<" not in tokenizer.tokenize("<")[0] and not add_labels_as_tokens:
@@ -527,6 +528,7 @@ def load_model_for_inference(
         trust_remote_code=True
         if ("mpt" in weights_path or "falcon" in weights_path)
         else False,
+        legacy=True,
     )
 
     quant_args = {}
