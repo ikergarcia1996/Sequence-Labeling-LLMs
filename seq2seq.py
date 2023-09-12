@@ -660,9 +660,9 @@ def seq2seq(
     source_lang: str,
     target_lang: str,
 ):
-    if experiment_done(experiment_dir=output_dir, test_tsvs=test_tsvs):
-        print(f"Experiment {output_dir} already done, skipping.")
-        return True
+    # if experiment_done(experiment_dir=output_dir, test_tsvs=test_tsvs):
+    #    print(f"Experiment {output_dir} already done, skipping.")
+    #    return True
 
     if not constrained_generation:
         print(
@@ -774,7 +774,6 @@ def seq2seq(
             use_gradient_checkpointing=quantization is not None or use_lora,
         )
 
-        is_llama_model = model.config.model_type.lower() == "llama"
         print(f"Model loaded!")
 
         if source_lang:
@@ -808,7 +807,6 @@ def seq2seq(
         print(f"Loading training dataset from {train_tsvs}")
         train_dataloader = get_dataloader(
             tokenizer=tokenizer,
-            is_llama_model=is_llama_model,
             filenames=train_tsvs,
             batch_size=per_device_train_batch_size,
             max_source_len=max_source_length,
@@ -829,7 +827,6 @@ def seq2seq(
             val_dataloaders.append(
                 get_dataloader(
                     tokenizer=tokenizer,
-                    is_llama_model=is_llama_model,
                     filenames=[dev_tsv],
                     batch_size=per_device_eval_batch_size,
                     max_source_len=max_source_length,
@@ -943,7 +940,6 @@ def seq2seq(
         print(f"  Weight decay = {weight_decay}")
         print(f"  Scheduler = {lr_scheduler_type}")
         print(f"  Model = {model_name_or_path}")
-        print(f"  is_llama_model = {is_llama_model}")
         print(f"  Mixed Precision = {accelerator.mixed_precision}")
         print(f"  Num GPUs = {accelerator.num_processes}")
         print(f"  Seed = {seed}")
@@ -1307,7 +1303,6 @@ def seq2seq(
             lora_weights_name_or_path=lora_weights_name_or_path,
             force_auto_device_map=force_auto_device_map,
         )
-        is_llama_model = model.config.model_type.lower() == "llama"
 
         if source_lang:
             try:
@@ -1336,7 +1331,6 @@ def seq2seq(
             print(f"Testing on {test_tsv}...")
             test_dataloader = get_dataloader(
                 tokenizer=tokenizer,
-                is_llama_model=is_llama_model,
                 filenames=[test_tsv],
                 batch_size=per_device_eval_batch_size,
                 max_source_len=max_source_length,

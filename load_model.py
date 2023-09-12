@@ -267,6 +267,7 @@ def load_model_for_training(
             else False
         ),
         legacy=True,
+        add_prefix_space=config.model_type in {"bloom", "gpt2", "roberta"},
     )
 
     if "<" not in tokenizer.tokenize("<")[0] and not add_labels_as_tokens:
@@ -402,7 +403,7 @@ def load_model_for_training(
     if use_lora:
         from peft import LoraConfig, PeftModel, TaskType, get_peft_model
 
-        model.enable_input_require_grads()  #  Enables the gradients for the input embeddings
+        model.enable_input_require_grads()  # Enables the gradients for the input embeddings
 
         if lora_weights_name_or_path is None:
             logging.info(
@@ -529,6 +530,7 @@ def load_model_for_inference(
         if ("mpt" in weights_path or "falcon" in weights_path)
         else False,
         legacy=True,
+        add_prefix_space=config.model_type in {"bloom", "gpt2", "roberta"},
     )
 
     quant_args = {}
