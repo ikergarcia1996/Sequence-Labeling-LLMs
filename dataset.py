@@ -231,6 +231,7 @@ def format_target_sentence(words: List[str], labels: List[str], add_spaces_label
 
 def prepare_sl(
     tokenizer: PreTrainedTokenizerBase,
+    add_spaces_around_tags: bool,
     words: List[str],
     labels: List[str],
     max_source_len: int,
@@ -243,6 +244,7 @@ def prepare_sl(
     Prepare data for seq2seq model
     Args:
         tokenizer: Model tokenizer
+        add_spaces_around_tags: If True, add spaces around tags
         words: List of words in the sentence we want to label
         labels: List of gold labels for each word
         max_source_len: Max length of the source sentence
@@ -260,7 +262,7 @@ def prepare_sl(
     """
 
     source_sentence, target_sentence = format_target_sentence(
-        words, labels, auto_detect_if_we_need_to_add_spaces_around_tags(tokenizer)
+        words, labels, add_spaces_around_tags
     )
 
     encoder_inputs = (
@@ -401,6 +403,7 @@ def batch(iterable, n=1) -> iter:
 
 def batch_tokenization(
     tokenizer: PreTrainedTokenizerBase,
+    add_spaces_around_tags: bool,
     max_source_len: int,
     max_target_len: int,
     is_encoder_decoder: bool,
@@ -419,6 +422,7 @@ def batch_tokenization(
         dataset.append(
             prepare_sl(
                 tokenizer,
+                add_spaces_around_tags,
                 words,
                 labels,
                 max_source_len,
@@ -454,6 +458,10 @@ class SequenceLabellingDataset(Dataset):
         self.task_labels = get_task_labels(filepath=file_path)
         self.start_tags, self.end_tags = get_task_tags(filepath=file_path)
 
+        add_spaces_around_tags = auto_detect_if_we_need_to_add_spaces_around_tags(
+            tokenizer
+        )
+
         self.start_labels_ids = [
             tokenizer.encode(tag, add_special_tokens=False) for tag in self.start_tags
         ]
@@ -479,6 +487,7 @@ class SequenceLabellingDataset(Dataset):
                 batch_tokenization,
                 zip(
                     itertools.repeat(tokenizer),
+                    itertools.repeat(add_spaces_around_tags),
                     itertools.repeat(max_source_len),
                     itertools.repeat(max_target_len),
                     itertools.repeat(is_encoder_decoder),
