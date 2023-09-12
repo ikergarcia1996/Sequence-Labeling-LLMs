@@ -458,6 +458,11 @@ class SequenceLabellingDataset(Dataset):
         self.task_labels = get_task_labels(filepath=file_path)
         self.start_tags, self.end_tags = get_task_tags(filepath=file_path)
 
+        # Add labels with space prefix
+        self.start_tags += [f" {tag}" for tag in self.start_tags]
+        self.end_tags += [f" {tag}" for tag in self.end_tags]
+        # self.task_labels += self.task_labels
+
         add_spaces_around_tags = auto_detect_if_we_need_to_add_spaces_around_tags(
             tokenizer
         )
