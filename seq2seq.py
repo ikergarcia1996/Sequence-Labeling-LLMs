@@ -1119,13 +1119,9 @@ def seq2seq(
                             }
                         )
 
-                    if (
-                        eval_every_steps > 0
-                        and ((completed_steps + 1) % eval_every_steps) == 0
-                        or (
-                            completed_steps + 1 == max_train_steps
-                            and eval_every_steps <= 0
-                        )
+                    if eval_every_steps > 0 and (
+                        ((completed_steps + 1) % eval_every_steps) == 0
+                        or (completed_steps + 1 == max_train_steps)
                     ):
                         f1_scores = []
                         for val_dataloader in val_dataloaders:
