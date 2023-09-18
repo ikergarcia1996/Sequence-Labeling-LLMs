@@ -266,6 +266,8 @@ def load_model_for_training(
             )
             else False
         ),
+        legacy=True,
+        add_prefix_space=config.model_type in {"bloom", "gpt2", "roberta"},
     )
 
     if "<" not in tokenizer.tokenize("<")[0] and not add_labels_as_tokens:
@@ -290,7 +292,7 @@ def load_model_for_training(
                 load_in_4bit=True,
                 bnb_4bit_use_double_quant=True,
                 bnb_4bit_quant_type="nf4",
-                bnb_4bit_compute_dtype=torch.float16
+                bnb_4bit_compute_dtype=torch.bloat16
                 if torch_dtype in ["auto", None]
                 else torch_dtype,
             )
@@ -401,7 +403,7 @@ def load_model_for_training(
     if use_lora:
         from peft import LoraConfig, PeftModel, TaskType, get_peft_model
 
-        model.enable_input_require_grads()  #  Enables the gradients for the input embeddings
+        model.enable_input_require_grads()  # Enables the gradients for the input embeddings
 
         if lora_weights_name_or_path is None:
             logging.info(
@@ -527,6 +529,8 @@ def load_model_for_inference(
         trust_remote_code=True
         if ("mpt" in weights_path or "falcon" in weights_path)
         else False,
+        legacy=True,
+        add_prefix_space=config.model_type in {"bloom", "gpt2", "roberta"},
     )
 
     quant_args = {}

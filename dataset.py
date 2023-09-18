@@ -122,15 +122,62 @@ def compute_words_ids(tokenizer: PreTrainedTokenizerBase, sentence: str):
     return words_ids
 
 
-def format_target_sentence(words: List[str], labels: List[str], is_llama_model: bool):
+def auto_detect_if_we_need_to_add_spaces_around_tags(
+    tokenizer: PreTrainedTokenizerBase,
+):
+    """
+    Auto-detect if we need to add spaces around tags. This parameter is very important and depends on
+    the tokenizer used. For T5 tokenizer, we should not add spaces around tags, because we would introduce
+    space tokens that were not present in the original sentence. For LLaMA or Bloom tokenizers, we need to
+    add spaces, else the token id for the word after the tag will be wrong.
+    Args:
+        tokenizer: Model tokenizer
+    Returns: True if we need to add spaces around tags, False otherwise
+    """
+
+    dummy_text = "a a"
+    token_ids = tokenizer.encode(text=dummy_text, add_special_tokens=False)
+
+    if len(token_ids) > 2:
+        print(
+            f"\nWe have automatically determined that the tokenizer {tokenizer.name_or_path} does not require "
+            f"spaces around tags. This is because the tokenizer requires {len(token_ids)} tokens to encode "
+            f"the sentence '{dummy_text}'. Therefore the tokenizer would add space tokens not present in the original "
+            f"sentence. Here is an example of how we will encode the sentences:\n"
+            f"<Person>Obama</Person>went to<Location>New York</Location>.\n"
+            f"If you find unexpectedly low performance, or that unconstrained decoding gets better results than "
+            f"constrained decoding, it is likely that this setting is wrong. In this case, you will need to manually "
+            f"inspect the tokenizer and make the appropriate changes in the code. You can also open an "
+            f"issue at https://github.com/ikergarcia1996/Sequence-Labeling-LLMs/issues\n"
+        )
+        return False
+    else:
+        print(
+            f"\nWe have automatically determined that the tokenizer {tokenizer.name_or_path} requires "
+            f"spaces around tags. This is because the tokenizer requires {len(token_ids)} tokens to encode "
+            f"the sentence '{dummy_text}'. Therefore the tokenizer does not add space tokens around tags. "
+            f"Here is an example of how we will encode the sentences:\n"
+            f"<Person> Obama </Person> went to <Location> New York </Location> .\n"
+            f"If you find unexpectedly low performance, or that unconstrained decoding gets better results than "
+            f"constrained decoding, it is likely that this setting is wrong. In this case, you will need to manually "
+            f"inspect the tokenizer and make the appropriate changes in the code. You can also open an "
+            f"issue at https://github.com/ikergarcia1996/Sequence-Labeling-LLMs/issues\n"
+        )
+        return True
+
+
+def format_target_sentence(words: List[str], labels: List[str], add_spaces_label: bool):
     """
        Format target sentence for seq2seq models
     Args:
         words: ["Obama","went","to","New","York", "."]
         labels: ["B-PER","O","O","B-LOC","I-LOC","O"]
-        is_llama_model: If True, add spaces around tags
-    Returns: <Person>Obama</Person>went to<Location>New York</Location>. if is_llama_model is False
-             <Person> Obama </Person> went to <Location> New York </Location> . if is_llama_model is True
+        add_spaces_label: If True, add spaces around tags. This parameter is very important and depends on
+        the tokenizer used. For T5 tokenizer, we should not add spaces around tags, because we would introduce
+        space tokens that were not present in the original sentence. For LLaMA or Bloom tokenizers, we need to
+        add spaces, else the token id for the word after the tag will be wrong.
+    Returns: <Person>Obama</Person>went to<Location>New York</Location>. if add_spaces_label is False
+             <Person> Obama </Person> went to <Location> New York </Location> . if add_spaces_label is True
 
     """
 
@@ -142,7 +189,7 @@ def format_target_sentence(words: List[str], labels: List[str], is_llama_model: 
         if label == "O":
             if inside_entity:
                 target.append(
-                    f"</{prev_label}>" if not is_llama_model else f" </{prev_label}> "
+                    f"</{prev_label}>" if not add_spaces_label else f" </{prev_label}> "
                 )
                 prev_is_word = False
                 inside_entity = False
@@ -153,13 +200,13 @@ def format_target_sentence(words: List[str], labels: List[str], is_llama_model: 
         elif label.startswith("B-"):
             if inside_entity:
                 target.append(
-                    f"</{prev_label}>" if not is_llama_model else f" </{prev_label}> "
+                    f"</{prev_label}>" if not add_spaces_label else f" </{prev_label}> "
                 )
                 prev_is_word = False
                 inside_entity = False
             prev_label = label2name(label[2:])
             target.append(
-                f"<{prev_label}>" if not is_llama_model else f" <{prev_label}> "
+                f"<{prev_label}>" if not add_spaces_label else f" <{prev_label}> "
             )
             target.append(word)
             prev_is_word = True
@@ -176,7 +223,7 @@ def format_target_sentence(words: List[str], labels: List[str], is_llama_model: 
 
     if inside_entity:
         target.append(
-            f"</{prev_label}>" if not is_llama_model else f" </{prev_label}> "
+            f"</{prev_label}>" if not add_spaces_label else f" </{prev_label}> "
         )
 
     return " ".join(words).strip(), "".join(target).strip()
@@ -184,7 +231,7 @@ def format_target_sentence(words: List[str], labels: List[str], is_llama_model: 
 
 def prepare_sl(
     tokenizer: PreTrainedTokenizerBase,
-    is_llama_model: bool,
+    add_spaces_around_tags: bool,
     words: List[str],
     labels: List[str],
     max_source_len: int,
@@ -197,7 +244,7 @@ def prepare_sl(
     Prepare data for seq2seq model
     Args:
         tokenizer: Model tokenizer
-        is_llama_model: If True, add spaces around tags
+        add_spaces_around_tags: If True, add spaces around tags
         words: List of words in the sentence we want to label
         labels: List of gold labels for each word
         max_source_len: Max length of the source sentence
@@ -215,7 +262,7 @@ def prepare_sl(
     """
 
     source_sentence, target_sentence = format_target_sentence(
-        words, labels, is_llama_model
+        words, labels, add_spaces_around_tags
     )
 
     encoder_inputs = (
@@ -277,6 +324,7 @@ def prepare_sl(
             if model_inputs["input_ids"][-1] != tokenizer.eos_token_id:
                 model_inputs["input_ids"].append(tokenizer.eos_token_id)
                 model_inputs["attention_mask"].append(1)
+                y_tokenized["input_ids"].append(tokenizer.eos_token_id)
         else:
             # Remove the last token if it is an eos token
             if model_inputs["input_ids"][-1] == tokenizer.eos_token_id:
@@ -355,7 +403,7 @@ def batch(iterable, n=1) -> iter:
 
 def batch_tokenization(
     tokenizer: PreTrainedTokenizerBase,
-    is_llama_model: bool,
+    add_spaces_around_tags: bool,
     max_source_len: int,
     max_target_len: int,
     is_encoder_decoder: bool,
@@ -374,7 +422,7 @@ def batch_tokenization(
         dataset.append(
             prepare_sl(
                 tokenizer,
-                is_llama_model,
+                add_spaces_around_tags,
                 words,
                 labels,
                 max_source_len,
@@ -392,7 +440,6 @@ class SequenceLabellingDataset(Dataset):
     def __init__(
         self,
         tokenizer: PreTrainedTokenizerBase,
-        is_llama_model: bool,
         file_path: str,
         max_source_len: int,
         max_target_len: int,
@@ -410,6 +457,15 @@ class SequenceLabellingDataset(Dataset):
         self.train = train
         self.task_labels = get_task_labels(filepath=file_path)
         self.start_tags, self.end_tags = get_task_tags(filepath=file_path)
+
+        # Add labels with space prefix
+        self.start_tags += [f" {tag}" for tag in self.start_tags]
+        self.end_tags += [f" {tag}" for tag in self.end_tags]
+        # self.task_labels += self.task_labels
+
+        add_spaces_around_tags = auto_detect_if_we_need_to_add_spaces_around_tags(
+            tokenizer
+        )
 
         self.start_labels_ids = [
             tokenizer.encode(tag, add_special_tokens=False) for tag in self.start_tags
@@ -436,7 +492,7 @@ class SequenceLabellingDataset(Dataset):
                 batch_tokenization,
                 zip(
                     itertools.repeat(tokenizer),
-                    itertools.repeat(is_llama_model),
+                    itertools.repeat(add_spaces_around_tags),
                     itertools.repeat(max_source_len),
                     itertools.repeat(max_target_len),
                     itertools.repeat(is_encoder_decoder),
@@ -661,7 +717,6 @@ class DataCollatorForSeq2Seq:
 
 def get_dataloader(
     tokenizer,
-    is_llama_model,
     filenames,
     batch_size,
     max_source_len,
@@ -675,7 +730,6 @@ def get_dataloader(
     if len(filenames) == 1:
         dataset = SequenceLabellingDataset(
             tokenizer=tokenizer,
-            is_llama_model=is_llama_model,
             file_path=filenames[0],
             max_source_len=max_source_len,
             max_target_len=max_target_len,
@@ -690,7 +744,7 @@ def get_dataloader(
             tokenizer,
             padding=True,
             label_pad_token_id=-100,
-            pad_to_multiple_of=8,  # May be faster on some hardware
+            pad_to_multiple_of=None,  # = 8 May be faster on some hardware
         )
         dataloader = DataLoader(
             dataset,
@@ -708,7 +762,6 @@ def get_dataloader(
             datasets.append(
                 SequenceLabellingDataset(
                     tokenizer=tokenizer,
-                    is_llama_model=is_llama_model,
                     file_path=filename,
                     max_source_len=max_source_len,
                     max_target_len=max_target_len,
@@ -724,7 +777,7 @@ def get_dataloader(
             tokenizer,
             padding=True,
             label_pad_token_id=tokenizer.pad_token_id,
-            pad_to_multiple_of=8,  # May be faster on some hardware
+            pad_to_multiple_of=None,  # = 8 May be faster on some hardware
         )
 
         concatenated_dataset = ConcatDataset(datasets)

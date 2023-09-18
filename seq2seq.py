@@ -262,7 +262,13 @@ def parse_args():
     parser.add_argument(
         "--constrained_generation",
         action="store_true",
-        help="Use constrained generation.",
+        help="Use constrained generation. ",
+    )
+
+    parser.add_argument(
+        "--unconstrained_generation",
+        action="store_true",
+        help="Use unconstrained generation.",
     )
 
     parser.add_argument(
@@ -343,6 +349,11 @@ def parse_args():
     if args.train_tsvs is not None and args.dev_tsvs is None:
         raise ValueError("You must specify a dev set if you specify a train set.")
 
+    if not args.constrained_generation and not args.unconstrained_generation:
+        raise ValueError(
+            "You must specify either constrained_generation or unconstrained_generation."
+        )
+
     return args
 
 
@@ -402,9 +413,9 @@ def evaluate(
 
     test_name = os.path.splitext(os.path.basename(dataloader.dataset.file_path))[0]
     if stage == "dev":
-        filename = f"{test_name}_epoch_{epoch}_step_{train_step}"
+        filename = f"{test_name}_epoch_{epoch}_step_{train_step}_{'constrained' if constrained_generation else 'unconstrained'}"
     else:
-        filename = f"{test_name}"
+        filename = f"{test_name}_{'constrained' if constrained_generation else 'unconstrained'}"
 
     with open(os.path.join(output_dir, f"{filename}.jsonl"), "w", encoding="utf8") as f:
         for step, batch in enumerate(
@@ -586,7 +597,7 @@ def evaluate(
         if stage == "dev":
             wandb.log(
                 {
-                    f"Val/{test_name}/f1": f1,
+                    f"Val/{test_name}/f1_{'constrained' if constrained_generation else 'unconstrained'}": f1,
                     # f"Val/{test_name}/f1_upperbound": f1_upperbound,
                     "epoch": epoch,
                     "step": train_step,
@@ -595,14 +606,14 @@ def evaluate(
         else:
             wandb.log(
                 {
-                    f"{test_name}/f1": f1,
+                    f"{test_name}/f1_{'constrained' if constrained_generation else 'unconstrained'}": f1,
                     # f"{test_name}/f1_upperbound": f1_upperbound,
                 }
             )
 
         print(
             f"\n{test_name}\n"
-            f"  -- f1: {f1}.\n"
+            f"  -- f1_{'constrained' if constrained_generation else 'unconstrained'}: {f1}.\n"
             # f"  -- f1_upperbound: {f1_upperbound}\n"
         )
 
@@ -638,6 +649,7 @@ def seq2seq(
     lora_dropout: float,
     lora_target_modules: List[str],
     constrained_generation: bool,
+    unconstrained_generation: bool,
     mixed_precision: str,
     quantization: int,
     local_rank: int,
@@ -648,14 +660,22 @@ def seq2seq(
     source_lang: str,
     target_lang: str,
 ):
-    if experiment_done(experiment_dir=output_dir, test_tsvs=test_tsvs):
-        print(f"Experiment {output_dir} already done, skipping.")
-        return True
+    # if experiment_done(experiment_dir=output_dir, test_tsvs=test_tsvs):
+    #    print(f"Experiment {output_dir} already done, skipping.")
+    #    return True
 
     if not constrained_generation:
         print(
             f"WARNING!!! Constrained generation is disabled, are you sure you want to do this?\n"
             f"Use --constrained_generation to enable it."
+        )
+
+    if constrained_generation and unconstrained_generation:
+        print(
+            f"We will use constrained generation and unconstrained generation. This means that we will run two "
+            f"inference runs for each dataset. This is useful if you want to compare the performance of the model "
+            f"with and without the constraints. If you don't want to run unconstrained generation, please remove "
+            f"the --unconstrained_generation flag."
         )
 
     if quantization and train_tsvs is not None and not use_lora:
@@ -682,6 +702,7 @@ def seq2seq(
                 "num_beams": num_beams,
                 "num_return_sequences": num_return_sequences,
                 "constrained_generation": constrained_generation,
+                "unconstrained_generation": unconstrained_generation,
                 "use_lora": use_lora,
                 "lora_r": lora_r,
                 "lora_alpha": lora_alpha,
@@ -753,7 +774,6 @@ def seq2seq(
             use_gradient_checkpointing=quantization is not None or use_lora,
         )
 
-        is_llama_model = model.config.model_type.lower() == "llama"
         print(f"Model loaded!")
 
         if source_lang:
@@ -787,7 +807,6 @@ def seq2seq(
         print(f"Loading training dataset from {train_tsvs}")
         train_dataloader = get_dataloader(
             tokenizer=tokenizer,
-            is_llama_model=is_llama_model,
             filenames=train_tsvs,
             batch_size=per_device_train_batch_size,
             max_source_len=max_source_length,
@@ -808,7 +827,6 @@ def seq2seq(
             val_dataloaders.append(
                 get_dataloader(
                     tokenizer=tokenizer,
-                    is_llama_model=is_llama_model,
                     filenames=[dev_tsv],
                     batch_size=per_device_eval_batch_size,
                     max_source_len=max_source_length,
@@ -922,7 +940,6 @@ def seq2seq(
         print(f"  Weight decay = {weight_decay}")
         print(f"  Scheduler = {lr_scheduler_type}")
         print(f"  Model = {model_name_or_path}")
-        print(f"  is_llama_model = {is_llama_model}")
         print(f"  Mixed Precision = {accelerator.mixed_precision}")
         print(f"  Num GPUs = {accelerator.num_processes}")
         print(f"  Seed = {seed}")
@@ -1102,33 +1119,47 @@ def seq2seq(
                             }
                         )
 
-                    if (
-                        eval_every_steps > 0
-                        and ((completed_steps + 1) % eval_every_steps) == 0
-                        or (
-                            completed_steps + 1 == max_train_steps
-                            and eval_every_steps <= 0
-                        )
+                    if eval_every_steps > 0 and (
+                        ((completed_steps + 1) % eval_every_steps) == 0
+                        or (completed_steps + 1 == max_train_steps)
                     ):
                         f1_scores = []
                         for val_dataloader in val_dataloaders:
                             val_dataloader = accelerator.prepare(val_dataloader)
                             model.eval()
-                            f1 = evaluate(
-                                dataloader=val_dataloader,
-                                constrained_generation=constrained_generation,
-                                accelerator=accelerator,
-                                model=model,
-                                tokenizer=tokenizer,
-                                max_length=max_target_length,
-                                num_beams=num_beams,
-                                num_return_sequences=num_return_sequences,
-                                output_dir=validation_dir,
-                                stage="dev",
-                                epoch=epoch,
-                                train_step=completed_steps,
-                                forced_bos_token=forced_bos_token,
-                            )
+                            f1 = -1.0
+                            if unconstrained_generation:
+                                f1 = evaluate(
+                                    dataloader=val_dataloader,
+                                    constrained_generation=False,
+                                    accelerator=accelerator,
+                                    model=model,
+                                    tokenizer=tokenizer,
+                                    max_length=max_target_length,
+                                    num_beams=num_beams,
+                                    num_return_sequences=num_return_sequences,
+                                    output_dir=validation_dir,
+                                    stage="dev",
+                                    epoch=epoch,
+                                    train_step=completed_steps,
+                                    forced_bos_token=forced_bos_token,
+                                )
+                            if constrained_generation:
+                                f1 = evaluate(
+                                    dataloader=val_dataloader,
+                                    constrained_generation=True,
+                                    accelerator=accelerator,
+                                    model=model,
+                                    tokenizer=tokenizer,
+                                    max_length=max_target_length,
+                                    num_beams=num_beams,
+                                    num_return_sequences=num_return_sequences,
+                                    output_dir=validation_dir,
+                                    stage="dev",
+                                    epoch=epoch,
+                                    train_step=completed_steps,
+                                    forced_bos_token=forced_bos_token,
+                                )
                             if accelerator.is_local_main_process:
                                 f1_scores.append(f1)
 
@@ -1168,21 +1199,39 @@ def seq2seq(
                 for val_dataloader in val_dataloaders:
                     val_dataloader = accelerator.prepare(val_dataloader)
                     model.eval()
-                    f1 = evaluate(
-                        dataloader=val_dataloader,
-                        constrained_generation=constrained_generation,
-                        accelerator=accelerator,
-                        model=model,
-                        tokenizer=tokenizer,
-                        max_length=max_target_length,
-                        num_beams=num_beams,
-                        num_return_sequences=num_return_sequences,
-                        output_dir=validation_dir,
-                        stage="dev",
-                        epoch=epoch,
-                        train_step=completed_steps,
-                        forced_bos_token=forced_bos_token,
-                    )
+                    f1 = -1.0
+                    if unconstrained_generation:
+                        f1 = evaluate(
+                            dataloader=val_dataloader,
+                            constrained_generation=False,
+                            accelerator=accelerator,
+                            model=model,
+                            tokenizer=tokenizer,
+                            max_length=max_target_length,
+                            num_beams=num_beams,
+                            num_return_sequences=num_return_sequences,
+                            output_dir=validation_dir,
+                            stage="dev",
+                            epoch=epoch,
+                            train_step=completed_steps,
+                            forced_bos_token=forced_bos_token,
+                        )
+                    if constrained_generation:
+                        f1 = evaluate(
+                            dataloader=val_dataloader,
+                            constrained_generation=True,
+                            accelerator=accelerator,
+                            model=model,
+                            tokenizer=tokenizer,
+                            max_length=max_target_length,
+                            num_beams=num_beams,
+                            num_return_sequences=num_return_sequences,
+                            output_dir=validation_dir,
+                            stage="dev",
+                            epoch=epoch,
+                            train_step=completed_steps,
+                            forced_bos_token=forced_bos_token,
+                        )
                     if accelerator.is_local_main_process:
                         f1_scores.append(f1)
 
@@ -1250,7 +1299,6 @@ def seq2seq(
             lora_weights_name_or_path=lora_weights_name_or_path,
             force_auto_device_map=force_auto_device_map,
         )
-        is_llama_model = model.config.model_type.lower() == "llama"
 
         if source_lang:
             try:
@@ -1279,7 +1327,6 @@ def seq2seq(
             print(f"Testing on {test_tsv}...")
             test_dataloader = get_dataloader(
                 tokenizer=tokenizer,
-                is_llama_model=is_llama_model,
                 filenames=[test_tsv],
                 batch_size=per_device_eval_batch_size,
                 max_source_len=max_source_length,
@@ -1293,19 +1340,34 @@ def seq2seq(
 
             test_dataloader = accelerator.prepare(test_dataloader)
 
-            _ = evaluate(
-                dataloader=test_dataloader,
-                constrained_generation=constrained_generation,
-                accelerator=accelerator,
-                model=model,
-                tokenizer=tokenizer,
-                max_length=max_target_length,
-                num_beams=num_beams,
-                num_return_sequences=num_return_sequences,
-                output_dir=output_dir,
-                stage="test",
-                forced_bos_token=forced_bos_token,
-            )
+            if unconstrained_generation:
+                _ = evaluate(
+                    dataloader=test_dataloader,
+                    constrained_generation=False,
+                    accelerator=accelerator,
+                    model=model,
+                    tokenizer=tokenizer,
+                    max_length=max_target_length,
+                    num_beams=num_beams,
+                    num_return_sequences=num_return_sequences,
+                    output_dir=output_dir,
+                    stage="test",
+                    forced_bos_token=forced_bos_token,
+                )
+            if constrained_generation:
+                _ = evaluate(
+                    dataloader=test_dataloader,
+                    constrained_generation=True,
+                    accelerator=accelerator,
+                    model=model,
+                    tokenizer=tokenizer,
+                    max_length=max_target_length,
+                    num_beams=num_beams,
+                    num_return_sequences=num_return_sequences,
+                    output_dir=output_dir,
+                    stage="test",
+                    forced_bos_token=forced_bos_token,
+                )
 
 
 def main():
