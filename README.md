@@ -12,7 +12,7 @@
 </p>
 
 This repository contains the code for performing Sequence Labelling 
-(Named Entity Recognition) with Language Model Logits (LLMs) as a Text2Text 
+ with Language Models (LLMs) as a Text2Text 
 constrained generation task. The code is built on top of 
 🤗HuggingFace's [Transformers](https://huggingface.co/docs/transformers/index) and
 🤗HuggingFace's [Accelerate](https://huggingface.co/docs/accelerate/index) library.
