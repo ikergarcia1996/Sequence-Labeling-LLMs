@@ -9,7 +9,7 @@ import os
 from dataset import get_dataloader, get_task_tags
 
 
-from load_model import load_model_for_training, load_model_for_inference
+from load_model import load_model
 
 from evaluate import (
     evaluate_most_probable,
@@ -254,9 +254,9 @@ def parse_args():
         "--lora_target_modules",
         type=str,
         nargs="+",
-        default=None,
+        default=["all"],
         help="The modules to apply LoRA to. This is a comma-separated list of module names. "
-        "If not specified we will try to use all the modules compatible with LoRA.",
+        "If not specified we will add LoRA to all the compatible layers.",
     )
 
     parser.add_argument(
@@ -269,6 +269,12 @@ def parse_args():
         "--unconstrained_generation",
         action="store_true",
         help="Use unconstrained generation.",
+    )
+
+    parser.add_argument(
+        "--use_flash_attention",
+        action="store_true",
+        help="Weather to use flash attention ",
     )
 
     parser.add_argument(
@@ -659,6 +665,7 @@ def seq2seq(
     prompt: str,
     source_lang: str,
     target_lang: str,
+    use_flash_attention: bool,
 ):
     # if experiment_done(experiment_dir=output_dir, test_tsvs=test_tsvs):
     #    print(f"Experiment {output_dir} already done, skipping.")
@@ -747,12 +754,14 @@ def seq2seq(
                 f"Using LoRA and add_labels_as_tokens, we will create a new model extending the original one with the "
                 f"labels as tokens. It will be saved in {extended_model_path}."
             )
-            model, tokenizer = load_model_for_training(
+            model, tokenizer = load_model(
+                inference=True,
                 model_weights_name_or_path=model_name_or_path,
                 use_lora=False,
                 quantization=None,
                 add_labels_as_tokens=add_labels_as_tokens,
                 labels=start_labels + end_labels,
+                use_flash_attention=use_flash_attention,
             )
 
             model.save_pretrained(extended_model_path)
@@ -760,7 +769,8 @@ def seq2seq(
 
             model_name_or_path = extended_model_path
 
-        model, tokenizer = load_model_for_training(
+        model, tokenizer = load_model(
+            inference=False,
             model_weights_name_or_path=model_name_or_path,
             use_lora=use_lora,
             lora_r=lora_r,
@@ -772,6 +782,7 @@ def seq2seq(
             labels=start_labels + end_labels,
             force_auto_device_map=force_auto_device_map,
             use_gradient_checkpointing=quantization is not None or use_lora,
+            use_flash_attention=use_flash_attention,
         )
 
         print(f"Model loaded!")
@@ -1293,11 +1304,14 @@ def seq2seq(
                 weights_path = model_name_or_path
                 lora_weights_name_or_path = None
 
-        model, tokenizer = load_model_for_inference(
-            weights_path=weights_path,
+        model, tokenizer = load_model(
+            inference=True,
+            model_weights_name_or_path=weights_path,
             quantization=quantization,
+            use_lora=lora_weights_name_or_path is not None,
             lora_weights_name_or_path=lora_weights_name_or_path,
             force_auto_device_map=force_auto_device_map,
+            use_flash_attention=use_flash_attention,
         )
 
         if source_lang:
