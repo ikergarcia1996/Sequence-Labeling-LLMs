@@ -209,7 +209,7 @@ def load_model(
     lora_r: Optional[int] = 8,
     lora_alpha: Optional[int] = 16,
     lora_dropout: Optional[float] = 0.05,
-    torch_dtype: Optional[str] = "bfloat16",
+    torch_dtype: Optional[str] = None,
     force_auto_device_map: bool = False,
     use_gradient_checkpointing: bool = False,
     trust_remote_code: bool = False,
