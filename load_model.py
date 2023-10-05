@@ -213,7 +213,7 @@ def load_model(
     force_auto_device_map: bool = False,
     use_gradient_checkpointing: bool = False,
     trust_remote_code: bool = False,
-    use_flash_attention: bool = True,
+    use_flash_attention: bool = False,
     use_better_transformer: bool = False,
     fsdp_training: bool = False,
     max_memory_MB: Optional[int] = None,
