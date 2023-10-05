@@ -336,6 +336,12 @@ def load_model(
 
     logging.info(f"Loading model model from {model_weights_name_or_path}")
 
+    MODEL_FOR_CAUSAL_LM_MAPPING_NAMES.update(
+        {
+            "stablelm_epoch": "LlamaForCausalLM",
+        }
+    )
+
     # Get the device map config
 
     device_map, max_memory = get_device_map(
