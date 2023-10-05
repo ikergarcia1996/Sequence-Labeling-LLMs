@@ -459,7 +459,6 @@ def load_model(
         torch_dtype=torch_dtype,
         config=config,
         trust_remote_code=trust_remote_code,
-        use_flash_attention_2=use_flash_attention,
         **quant_args,
         **kwargs,
     )
