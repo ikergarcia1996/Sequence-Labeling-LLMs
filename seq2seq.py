@@ -278,6 +278,12 @@ def parse_args():
     )
 
     parser.add_argument(
+        "--trust_remote_code",
+        action="store_true",
+        help="Weather to use flash attention ",
+    )
+
+    parser.add_argument(
         "--mixed_precision",
         type=str,
         default="no",
@@ -666,10 +672,13 @@ def seq2seq(
     source_lang: str,
     target_lang: str,
     use_flash_attention: bool,
+    trust_remote_code: bool,
 ):
     # if experiment_done(experiment_dir=output_dir, test_tsvs=test_tsvs):
     #    print(f"Experiment {output_dir} already done, skipping.")
     #    return True
+
+    trust_remote_code = True  # @todo Remove for release
 
     if not constrained_generation:
         print(
@@ -762,6 +771,7 @@ def seq2seq(
                 add_labels_as_tokens=add_labels_as_tokens,
                 labels=start_labels + end_labels,
                 use_flash_attention=use_flash_attention,
+                trust_remote_code=trust_remote_code,
             )
 
             model.save_pretrained(extended_model_path)
@@ -783,6 +793,7 @@ def seq2seq(
             force_auto_device_map=force_auto_device_map,
             use_gradient_checkpointing=quantization is not None or use_lora,
             use_flash_attention=use_flash_attention,
+            trust_remote_code=trust_remote_code,
         )
 
         print(f"Model loaded!")
@@ -1312,6 +1323,7 @@ def seq2seq(
             lora_weights_name_or_path=lora_weights_name_or_path,
             force_auto_device_map=force_auto_device_map,
             use_flash_attention=use_flash_attention,
+            trust_remote_code=trust_remote_code,
         )
 
         if source_lang:
