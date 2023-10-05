@@ -539,34 +539,6 @@ def load_model(
 
         logging.info(f"\nLoRA config:\n{model.peft_config}\n")
 
-    """
-    Convert the model layers to the correct dtype
-    If LoRA and bf16 is used, we convert the LoRA layers to bf16 for faster training
-    """
-
-    if use_lora:
-        from peft.tuners.lora import LoraLayer
-
-        for name, module in model.named_modules():
-            if isinstance(module, LoraLayer):
-                if torch_dtype == torch.bfloat16:
-                    logging.debug(f"Converting LoRA layer {name} to {torch_dtype}")
-                    module = module.to(torch.bfloat16)
-
-    if not fsdp_training:
-        for name, module in model.named_modules():
-            if "norm" in name:
-                logging.debug(f"Converting layer {name} to {torch.float32}")
-                module = module.to(torch.float32)
-            if "lm_head" in name or "embed_tokens" in name:
-                if hasattr(module, "weight"):
-                    if (
-                        torch_dtype == torch.bfloat16
-                        and module.weight.dtype == torch.float32
-                    ):
-                        logging.debug(f"Converting layer {name} to {torch_dtype}")
-                        module = module.to(torch.bfloat16)
-
     if inference:
         if quantization is None and use_lora:
             # If we are not using quantization, we merge the LoRA layers into the model for faster inference.
