@@ -4,6 +4,9 @@ from label_names import name2label, label2name
 import os
 from seqeval.metrics import classification_report, f1_score
 from tqdm.auto import tqdm
+import argparse
+import json
+from dataset import get_task_labels
 
 
 def split_sentence(
@@ -326,3 +329,26 @@ def evaluate_best_prediction(
         print(f"Macro F1: {macro_f1}", file=output_file)
 
     return micro_f1
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--predictions_json", type=str, required=True)
+    parser.add_argument("--gold_tsv", type=str, required=True)
+    parser.add_argument("--output_name", type=str, required=True)
+    args = parser.parse_args()
+
+    preds = []
+    gold = []
+    with open(args.predictions_json, "r", encoding="utf8") as f:
+        for line in f:
+            line = json.loads(line.strip())
+            preds.append(line["prediction"])
+            gold.append(line["gold"])
+
+    evaluate_most_probable(
+        predictions=preds,
+        gold=gold,
+        output_name=args.output_name,
+        task_labels=get_task_labels(args.gold_tsv),
+    )
