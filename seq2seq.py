@@ -822,9 +822,11 @@ def seq2seq(
         trainable_params, all_param, percent_trainable = print_trainable_parameters(
             model
         )
-        wandb.config.trainable_params = trainable_params
-        wandb.config.all_param = all_param
-        wandb.config.percent_trainable = percent_trainable
+
+        if accelerator.is_local_main_process:
+            wandb.config.trainable_params = trainable_params
+            wandb.config.all_param = all_param
+            wandb.config.percent_trainable = percent_trainable
 
         print(f"Loading training dataset from {train_tsvs}")
         train_dataloader = get_dataloader(
