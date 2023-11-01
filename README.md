@@ -121,11 +121,19 @@ accelerate launch seq2seq.py \
 --project_name SeqLabeling_w_LLMs \
 --add_labels_as_tokens
 ```
+### Multi GPU
+You can customize the number of GPUs using the `--num_processes` flags. 
+See the [Accelerate Documentation](https://huggingface.co/docs/accelerate/index) for more information. You can also
+configure accelerate using the `accelerate config` command (See [Accelerate Installation](https://huggingface.co/docs/accelerate/basic_tutorials/install))
+
+```bash
+  accelerate launch --num_machines 1 --num_processes 2 seq2seq.py 
+  ```
 
 Explanation of the arguments:
-- mixed_precision: Enables mixed precision training. You can use `bf16` or `fp16`. T5 model family requires `bf16` precision, for other models such as LLaMA you can use `fp16`.
+- mixed_precision: Enables mixed precision training. You can use `bf16` or `fp16`. If you hardware support it I recommend `bf16` precision in all cases. 
 - constrained_generation: Enables constrained generation. 
-- num_beams: Number of beams for constrained generation. More beams means better performance but slower inference.
+- num_beams: Number of beams for constrained generation. More beams means better results but slower inference.
 - num_return_sequences: Number of sequences to return (<= num_beams). We will evaluate the model taking into account only the most probable annotation, but you can output as many as you want, they will be saved in the `output_dataset.jsonl` file.
 - train_tsvs, dev_tsvs, test_tsvs: Paths to the train, dev and test datasets. This argument allows you to use multiple datasets for training, validation and testing. Training datasets will be concatenated.
 - optim: adafactor recommended for T5 based models, AdamW recommended for decoder models (GPT2, LLaMA, etc.)
@@ -141,7 +149,7 @@ use an 8 bit optimizer for further memory reduction. See the [examples](examples
 for examples of how to train different models with LoRA and 8 / 4 bits quantization.
 
 If you still don't have enough memory, you can offload some of the model parameters to the CPU. For that set 
-the `--force_auto_device_map` flag. This will be slower, but it will allow you to train the model or 
+the `--force_auto_device_map` flag. This will split the model across all available GPUs and CPUs. This will be slower, but it will allow you to train the model or 
 run inference with less memory.
 
 Here
