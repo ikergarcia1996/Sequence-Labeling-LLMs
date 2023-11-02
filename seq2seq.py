@@ -864,7 +864,9 @@ def seq2seq(
             )
 
         num_update_steps_per_epoch = math.ceil(
-            len(train_dataloader) / gradient_accumulation_steps
+            len(train_dataloader)
+            / gradient_accumulation_steps
+            / accelerator.num_processes
         )
         max_train_steps = num_train_epochs * num_update_steps_per_epoch
 
