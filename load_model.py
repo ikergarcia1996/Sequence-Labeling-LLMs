@@ -217,7 +217,7 @@ def load_model(
     use_better_transformer: bool = False,
     fsdp_training: bool = False,
     max_memory_MB: Optional[int] = None,
-) -> Tuple[PreTrainedModel, PreTrainedTokenizerBase]:
+) -> Tuple[PreTrainedModel, PreTrainedTokenizerBase, str]:
     """
     Load any Decoder model for training.
 
@@ -287,8 +287,8 @@ def load_model(
             is raised when `int8_quantization=True` but `use_lora=False`.
 
     Returns:
-        `Tuple[PreTrainedModel, PreTrainedTokenizerBase]`:
-            The loaded model and tokenizer.
+        `Tuple[PreTrainedModel, PreTrainedTokenizerBase, str]`:
+            The loaded model, tokenizer and model_type.
     """
 
     # Sanity checks
@@ -564,4 +564,4 @@ def load_model(
             f" trainable%: {round(trainable_percentage,6)}\n"
         )
 
-    return model, tokenizer
+    return model, tokenizer, model_type
