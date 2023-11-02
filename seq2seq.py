@@ -763,7 +763,7 @@ def seq2seq(
                 f"Using LoRA and add_labels_as_tokens, we will create a new model extending the original one with the "
                 f"labels as tokens. It will be saved in {extended_model_path}."
             )
-            model, tokenizer = load_model(
+            model, tokenizer, model_type = load_model(
                 inference=True,
                 model_weights_name_or_path=model_name_or_path,
                 use_lora=False,
@@ -779,7 +779,7 @@ def seq2seq(
 
             model_name_or_path = extended_model_path
 
-        model, tokenizer = load_model(
+        model, tokenizer, model_type = load_model(
             inference=False,
             model_weights_name_or_path=model_name_or_path,
             use_lora=use_lora,
@@ -835,7 +835,7 @@ def seq2seq(
             batch_size=per_device_train_batch_size,
             max_source_len=max_source_length,
             max_target_len=max_target_length,
-            is_encoder_decoder=model.config.is_encoder_decoder,
+            is_encoder_decoder=model_type == "seq2seq",
             train=True,
             input_prompt=None if prompt is None else prompt,
             num_workers=min(os.cpu_count(), 8),
@@ -855,7 +855,7 @@ def seq2seq(
                     batch_size=per_device_eval_batch_size,
                     max_source_len=max_source_length,
                     max_target_len=max_target_length,
-                    is_encoder_decoder=model.config.is_encoder_decoder,
+                    is_encoder_decoder=model_type == "seq2seq",
                     train=False,
                     input_prompt=None if prompt is None else prompt,
                     num_workers=min(os.cpu_count(), 8),
@@ -1317,7 +1317,7 @@ def seq2seq(
                 weights_path = model_name_or_path
                 lora_weights_name_or_path = None
 
-        model, tokenizer = load_model(
+        model, tokenizer, model_type = load_model(
             inference=True,
             model_weights_name_or_path=weights_path,
             quantization=quantization,
@@ -1359,7 +1359,7 @@ def seq2seq(
                 batch_size=per_device_eval_batch_size,
                 max_source_len=max_source_length,
                 max_target_len=max_target_length,
-                is_encoder_decoder=model.config.is_encoder_decoder,
+                is_encoder_decoder=model_type == "seq2seq",
                 train=False,
                 input_prompt=None if prompt is None else prompt,
                 num_workers=min(os.cpu_count(), 8),
