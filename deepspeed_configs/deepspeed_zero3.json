@@ -14,17 +14,17 @@
     "type": "AdamW",
     "params": {
       "lr": "auto",
-      "betas": [0.9, 0.995],
-      "eps": 1e-7,
-      "weight_decay": 0.0
+      "betas": "auto",
+      "eps": "auto",
+      "weight_decay": "auto"
     }
   },
   "scheduler": {
     "type": "WarmupDecayLR",
     "params": {
-      "warmup_min_lr": 0.0,
-      "warmup_max_lr": 1e-4,
-      "warmup_num_steps": 500,
+      "warmup_min_lr": "auto",
+      "warmup_max_lr": "auto",
+      "warmup_num_steps": "auto",
       "warmup_type": "linear",
       "total_num_steps": "auto"
     }
