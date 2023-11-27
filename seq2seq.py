@@ -933,22 +933,31 @@ def seq2seq(
         elif optim.lower() == "deepspeed":
             from accelerate.utils import DummyOptim
 
-            kwargs = {}
-            kwargs["optimizer"]["params"]["betas"] = (0.9, 0.995)
-            kwargs["optimizer"]["params"]["lr"] = learning_rate
-            kwargs["optimizer"]["params"]["eps"] = 1e-7
-            kwargs["optimizer"]["params"]["weight_decay"] = weight_decay
-
-            kwargs["scheduler"]["params"]["warmup_min_lr"] = 0
-            kwargs["scheduler"]["params"]["warmup_max_lr"] = learning_rate
-            kwargs["scheduler"]["params"]["warmup_num_steps"] = num_warmup_steps
-            kwargs["scheduler"]["params"]["warmup_type"] = "linear"
-            kwargs["scheduler"]["params"]["total_num_steps"] = max_train_steps
+            kwargs = {
+                "optimizer": {
+                    "params": {
+                        "lr": learning_rate,
+                        "betas": (0.9, 0.999),
+                        "eps": 1e-8,
+                        "weight_decay": weight_decay,
+                    }
+                },
+                "scheduler": {
+                    "params": {
+                        "warmup_min_lr": 0.0,
+                        "warmup_max_lr": learning_rate,
+                        "warmup_num_steps": num_warmup_steps,
+                        "warmup_type": "linear",
+                        "total_num_steps": max_train_steps,
+                    }
+                },
+            }
 
             optimizer = DummyOptim(
                 params=optimizer_grouped_parameters,
                 lr=learning_rate,
                 weight_decay=weight_decay,
+                kwargs=kwargs,
             )
         else:
             raise ValueError(
