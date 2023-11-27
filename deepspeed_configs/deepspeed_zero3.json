@@ -22,10 +22,10 @@
   "scheduler": {
     "type": "WarmupDecayLR",
     "params": {
-      "warmup_min_lr": "auto",
-      "warmup_max_lr": "auto",
-      "warmup_num_steps": "auto",
-      "warmup_type": "cosine",
+      "warmup_min_lr": 0.0,
+      "warmup_max_lr": 1e-4,
+      "warmup_num_steps": 500,
+      "warmup_type": "linear",
       "total_num_steps": "auto"
     }
   },
