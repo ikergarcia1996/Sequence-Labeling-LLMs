@@ -1,4 +1,4 @@
-accelerate launch --use_deepspeed --deepspeed_config_file deepspeed_configs/deepspeed_zero3_no_optim.json --mixed_precision bf16 --num_processes 2 seq2seq.py \
+accelerate launch --use_deepspeed --deepspeed_config_file deepspeed_configs/deepspeed_zero3_no_optim.json --mixed_precision bf16 --num_processes 2 --num_machines 1 --dynamo_backend no seq2seq.py \
 --mixed_precision bf16 \
 --constrained_generation \
 --constrained_generation \
