@@ -937,7 +937,9 @@ def seq2seq(
                 params=optimizer_grouped_parameters,
                 lr=learning_rate,
                 weight_decay=weight_decay,
-                betas=(0.9, 0.995),
+                kwargs=dict(
+                    betas=(0.9, 0.995),
+                ),
             )
         else:
             raise ValueError(
