@@ -968,12 +968,41 @@ def seq2seq(
             model, optimizer, train_dataloader
         )
 
-        lr_scheduler = get_scheduler(
-            name=lr_scheduler_type,
-            optimizer=optimizer,
-            num_warmup_steps=num_warmup_steps,
-            num_training_steps=max_train_steps,
-        )
+        if optim.lower() == "deepspeed":
+            from accelerate.utils import DummyScheduler
+
+            kwargs = {
+                "optimizer": {
+                    "params": {
+                        "lr": learning_rate,
+                        "betas": (0.9, 0.999),
+                        "eps": 1e-8,
+                        "weight_decay": weight_decay,
+                    }
+                },
+                "scheduler": {
+                    "params": {
+                        "warmup_min_lr": 0.0,
+                        "warmup_max_lr": learning_rate,
+                        "warmup_num_steps": num_warmup_steps,
+                        "warmup_type": "linear",
+                        "total_num_steps": max_train_steps,
+                    }
+                },
+            }
+            lr_scheduler = DummyScheduler(
+                optimizer=optimizer,
+                total_num_steps=max_train_steps,
+                warmup_num_steps=num_warmup_steps,
+                kwargs=kwargs,
+            )
+        else:
+            lr_scheduler = get_scheduler(
+                name=lr_scheduler_type,
+                optimizer=optimizer,
+                num_warmup_steps=num_warmup_steps,
+                num_training_steps=max_train_steps,
+            )
 
         completed_steps = 0
         best_epoch_metric: float = -1
