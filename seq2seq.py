@@ -170,7 +170,7 @@ def parse_args():
         help="The optimizer to use. Adafactor is recommended for training T5, mT5 and FLAN models. "
         "AdamW is recommended for LoRA and decoder-only models. Adafactor requires fairseq, you can install it with "
         "pip install fairseq.",
-        choices=["adamw", "adamw8bits", "adafactor"],
+        choices=["adamw", "adamw8bits", "adafactor", "deepspeed"],
     )
 
     parser.add_argument(
@@ -929,6 +929,14 @@ def seq2seq(
                 lr=learning_rate,
                 clip_threshold=1.0,
                 # weight_decay=args.weight_decay,
+            )
+        elif optim.lower() == "deepspeed":
+            from accelerate.utils import DummyOptim
+
+            optimizer = DummyOptim(
+                params=optimizer_grouped_parameters,
+                lr=learning_rate,
+                weight_decay=weight_decay,
             )
         else:
             raise ValueError(
