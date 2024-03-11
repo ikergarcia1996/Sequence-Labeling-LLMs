@@ -1,16 +1,17 @@
-from torch.utils.data import Dataset, DataLoader
-from typing import List, Union, Optional, Any
-from transformers import PreTrainedTokenizerBase, BatchEncoding
-from transformers.utils import PaddingStrategy
-from label_names import label2name
-from tqdm.auto import tqdm
-import math
-from multiprocessing import Pool
 import itertools
-import numpy as np
+import math
 from dataclasses import dataclass
+from multiprocessing import Pool
+from typing import Any, List, Optional, Union
+
+import numpy as np
+from torch.utils.data import ConcatDataset, DataLoader, Dataset
+from tqdm.auto import tqdm
+from transformers import BatchEncoding, PreTrainedTokenizerBase
+from transformers.utils import PaddingStrategy
+
+from label_names import label2name
 from tag_encoding import rewrite_labels
-from torch.utils.data import ConcatDataset
 
 
 def read_tsv(filepath) -> (List[List[str]], List[List[str]]):
@@ -271,21 +272,51 @@ def prepare_sl(
         else source_sentence
     )
 
+    if tokenizer.chat_template is not None:
+        print("Chat template found in the tokenizer. We will apply it to the input.")
+        encoder_inputs = tokenizer.apply_chat_template(
+            [{"role": "user", "content": encoder_inputs}],
+            tokenize=False,
+            add_generation_prompt=True,
+        )
+
     if is_encoder_decoder:
         labels = target_sentence
 
     else:
         if train:
-            labels = f"{encoder_inputs.strip(' ')} -> {target_sentence.strip(' ')}"
-            decoder_prompt = f"{encoder_inputs.strip(' ')} ->"
-            encoder_inputs = (
-                f"{encoder_inputs.strip(' ')} -> {target_sentence.strip(' ')}"
-            )
+            if tokenizer.chat_template is not None:
+                labels = tokenizer.apply_chat_template(
+                    [
+                        {"role": "user", "content": encoder_inputs},
+                        {"role": "assistant", "content": target_sentence.strip(" ")},
+                    ],
+                    tokenize=False,
+                )
+                decoder_prompt = encoder_inputs
+                encoder_inputs = labels
+            else:
+                labels = f"{encoder_inputs.strip(' ')} -> {target_sentence.strip(' ')}"
+                decoder_prompt = f"{encoder_inputs.strip(' ')} ->"
+                encoder_inputs = (
+                    f"{encoder_inputs.strip(' ')} -> {target_sentence.strip(' ')}"
+                )
 
         else:
-            labels = f"{encoder_inputs.strip(' ')} -> {target_sentence.strip(' ')}"
-            decoder_prompt = f"{encoder_inputs.strip(' ')} ->"
-            encoder_inputs = f"{encoder_inputs.strip(' ')} ->"
+            if tokenizer.chat_template is not None:
+                labels = tokenizer.apply_chat_template(
+                    [
+                        {"role": "user", "content": encoder_inputs},
+                        {"role": "assistant", "content": target_sentence.strip(" ")},
+                    ],
+                    tokenize=False,
+                )
+                decoder_prompt = encoder_inputs
+                encoder_inputs = encoder_inputs
+            else:
+                labels = f"{encoder_inputs.strip(' ')} -> {target_sentence.strip(' ')}"
+                decoder_prompt = f"{encoder_inputs.strip(' ')} ->"
+                encoder_inputs = f"{encoder_inputs.strip(' ')} ->"
 
     model_inputs = tokenizer(
         text=encoder_inputs,
