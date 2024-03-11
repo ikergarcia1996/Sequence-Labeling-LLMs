@@ -1,46 +1,30 @@
+import argparse
+import json
+import math
+import os
+from typing import List
+
+import torch
+import torch.nn as nn
+import wandb
+from accelerate import Accelerator
+from torch.optim import AdamW
+from torch.utils.data import DataLoader
+from tqdm.auto import tqdm
 from transformers import (
+    PreTrainedModel,
     PreTrainedTokenizerBase,
+    get_scheduler,
+    set_seed,
 )
 from transformers.models.auto.modeling_auto import MODEL_FOR_CAUSAL_LM_MAPPING_NAMES
 
-import argparse
-import math
-import os
+from constrained_generation import constrained_beam_search, unconstrained_beam_search
 from dataset import get_dataloader, get_task_tags
-
-
-from load_model import load_model
-
 from evaluate import (
     evaluate_most_probable,
 )
-
-
-from typing import List
-import json
-
-from tqdm.auto import tqdm
-
-
-from torch.utils.data import DataLoader
-import torch
-import torch.nn as nn
-
-from accelerate import Accelerator
-
-from transformers import (
-    get_scheduler,
-    set_seed,
-    PreTrainedModel,
-)
-
-from torch.optim import AdamW
-
-
-import wandb
-
-
-from constrained_generation import constrained_beam_search, unconstrained_beam_search
+from load_model import load_model
 
 
 def gen_batch(iterable, n=1):
@@ -682,16 +666,16 @@ def seq2seq(
 
     if not constrained_generation:
         print(
-            f"WARNING!!! Constrained generation is disabled, are you sure you want to do this?\n"
-            f"Use --constrained_generation to enable it."
+            "WARNING!!! Constrained generation is disabled, are you sure you want to do this?\n"
+            "Use --constrained_generation to enable it."
         )
 
     if constrained_generation and unconstrained_generation:
         print(
-            f"We will use constrained generation and unconstrained generation. This means that we will run two "
-            f"inference runs for each dataset. This is useful if you want to compare the performance of the model "
-            f"with and without the constraints. If you don't want to run unconstrained generation, please remove "
-            f"the --unconstrained_generation flag."
+            "We will use constrained generation and unconstrained generation. This means that we will run two "
+            "inference runs for each dataset. This is useful if you want to compare the performance of the model "
+            "with and without the constraints. If you don't want to run unconstrained generation, please remove "
+            "the --unconstrained_generation flag."
         )
 
     if quantization and train_tsvs is not None and not use_lora:
@@ -796,7 +780,7 @@ def seq2seq(
             trust_remote_code=trust_remote_code,
         )
 
-        print(f"Model loaded!")
+        print("Model loaded!")
 
         if source_lang:
             try:
@@ -1058,9 +1042,9 @@ def seq2seq(
                 ### DEBUG ###
                 if first and accelerator.is_local_main_process:
                     decodeable_inputs = batch.input_ids.clone()
-                    decodeable_inputs[
-                        decodeable_inputs == -100
-                    ] = tokenizer.pad_token_id
+                    decodeable_inputs[decodeable_inputs == -100] = (
+                        tokenizer.pad_token_id
+                    )
 
                     model_inputs = "\n".join(
                         tokenizer.batch_decode(
@@ -1072,9 +1056,9 @@ def seq2seq(
 
                     # Labels without -100
                     decodeable_labels = batch.labels.clone()
-                    decodeable_labels[
-                        decodeable_labels == -100
-                    ] = tokenizer.pad_token_id
+                    decodeable_labels[decodeable_labels == -100] = (
+                        tokenizer.pad_token_id
+                    )
 
                     labels = "\n".join(
                         tokenizer.batch_decode(
@@ -1108,13 +1092,13 @@ def seq2seq(
                             clean_up_tokenization_spaces=False,
                         )
                     )
-                    print(f"*** Sample of batch 0 ***")
+                    print("*** Sample of batch 0 ***")
                     print(f"-- Model inputs --\n{model_inputs}")
                     print(f"-- Labels --\n{labels}")
                     print(f"-- Words ids --\n{words_ids}")
                     print(f"-- Original sentences --\n{original_sentences}")
                     print(f"-- Gold sentences --\n{gold_sentences}")
-                    print(f"*** End of sample ***\n")
+                    print("*** End of sample ***\n")
                     first = False
 
                 if (
@@ -1354,7 +1338,7 @@ def seq2seq(
             tokenizer.save_pretrained(output_dir)
 
     if test_tsvs is not None:
-        print(f"========= TESTING =========")
+        print("========= TESTING =========")
 
         print(f"Loading best model from {output_dir}")
 
