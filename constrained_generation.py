@@ -1,7 +1,8 @@
-from transformers import PreTrainedModel, BatchEncoding
-from typing import List, Dict, Union
-import torch
 import copy
+from typing import Dict, List, Union
+
+import torch
+from transformers import BatchEncoding, PreTrainedModel
 
 
 def compute_words_ids(tokenizer, sentence):
@@ -43,7 +44,7 @@ class LabelTrie:
         self.pointer = self.root
 
     def get_next_labels(self):
-        if type(self.pointer.labels_ids) == int:
+        if isinstance(self.pointer.labels_ids, int):
             return self.pointer.labels_ids
         return list(self.pointer.labels_ids.keys())
 
@@ -67,7 +68,7 @@ class LabelTrie:
         return trie
 
     def next_is_last(self, label_id):
-        if type(self.pointer.labels_ids[label_id].labels_ids) == int:
+        if isinstance(self.pointer.labels_ids[label_id].labels_ids, int):
             return self.pointer.labels_ids[label_id].labels_ids
         return -1
 
@@ -188,7 +189,7 @@ class SequenceLabellingConstraint:
     ):
         word_ids = [x for x in word_ids if x is None or x != -1]
         tokens_ids = (
-            tokens_ids if type(tokens_ids) == list else tokens_ids.cpu().tolist()
+            tokens_ids if isinstance(tokens_ids, list) else tokens_ids.cpu().tolist()
         )
         tokens_ids = [x for x in tokens_ids if x != pad_token_id]
 
@@ -648,8 +649,7 @@ class BeamNode:
             )
             # Compute score
             if (
-                token_id == self.pad_token_id
-                or self.completed
+                token_id == self.pad_token_id or self.completed
                 # or token_id == self.eos_token_id
             ):
                 # Ignore pad token
