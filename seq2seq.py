@@ -1042,9 +1042,9 @@ def seq2seq(
                 ### DEBUG ###
                 if first and accelerator.is_local_main_process:
                     decodeable_inputs = batch.input_ids.clone()
-                    decodeable_inputs[decodeable_inputs == -100] = (
-                        tokenizer.pad_token_id
-                    )
+                    decodeable_inputs[
+                        decodeable_inputs == -100
+                    ] = tokenizer.pad_token_id
 
                     model_inputs = "\n".join(
                         tokenizer.batch_decode(
@@ -1056,9 +1056,9 @@ def seq2seq(
 
                     # Labels without -100
                     decodeable_labels = batch.labels.clone()
-                    decodeable_labels[decodeable_labels == -100] = (
-                        tokenizer.pad_token_id
-                    )
+                    decodeable_labels[
+                        decodeable_labels == -100
+                    ] = tokenizer.pad_token_id
 
                     labels = "\n".join(
                         tokenizer.batch_decode(
@@ -1339,6 +1339,19 @@ def seq2seq(
 
     if test_tsvs is not None:
         print("========= TESTING =========")
+        # For Medical MT5, remove for final version
+        for lang in ["en", "es", "fr", "it"]:
+            for filename in test_tsvs:
+                if (
+                    filename
+                    == f"/ikerlariak/igarcia945/antidote_mt5-corpus/sequence-labeling-evaluation-datasets/{lang}/{lang}-neoplasm-test.tsv"
+                ):
+                    test_tsvs.append(
+                        f"/ikerlariak/igarcia945/antidote_mt5-corpus/sequence-labeling-evaluation-datasets/{lang}/{lang}-glaucoma-test.tsv"
+                    )
+                    test_tsvs.append(
+                        f"/ikerlariak/igarcia945/antidote_mt5-corpus/sequence-labeling-evaluation-datasets/{lang}/{lang}-mixed-test.tsv"
+                    )
 
         print(f"Loading best model from {output_dir}")
 
