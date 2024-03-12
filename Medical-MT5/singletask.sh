@@ -82,12 +82,6 @@ google/mt5-large \
 google/mt5-xl
 do
 for dataset in \
-en/en-ncbi-disease \
-en/en-bc5cdr_disease \
-en/en-bc5cdr_chemical \
-en/en-diann \
-es/es-diann \
-es/es-pharmaconer-bsc \
 en/en-neoplasm \
 es/es-neoplasm \
 fr/fr-neoplasm \
