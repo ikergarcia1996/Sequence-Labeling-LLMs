@@ -24,10 +24,10 @@ export TRANSFORMERS_NO_ADVISORY_WARNINGS="true"
 # Run MultiTask
 
 for model_name in  \
-google/flan-t5-large \
 google/flan-t5-xl \
 /gaueko1/hizkuntza-ereduak/medT5/medT5-large \
 /gaueko1/hizkuntza-ereduak/medT5/medT5-xl \
+google/flan-t5-large \
 razent/SciFive-large-Pubmed_PMC \
 google/mt5-large \
 google/mt5-xl
@@ -97,6 +97,6 @@ do
   --add_labels_as_tokens
 
 
-  rm -rf ./Antidote_mT5_5/all/"$modelparams"_all/*.bin
+  # rm -rf ./Antidote_mT5_5/all/"$modelparams"_all/*.bin
 
 done
