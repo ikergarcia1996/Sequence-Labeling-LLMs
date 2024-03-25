@@ -488,7 +488,7 @@ class SequenceLabellingDataset(Dataset):
         self.train = train
         self.task_labels = get_task_labels(filepath=file_path)
         self.start_tags, self.end_tags = get_task_tags(filepath=file_path)
-
+        self.start_tags_original = self.start_tags.copy()
         # Add labels with space prefix
         self.start_tags += [f" {tag}" for tag in self.start_tags]
         self.end_tags += [f" {tag}" for tag in self.end_tags]
@@ -510,9 +510,11 @@ class SequenceLabellingDataset(Dataset):
 
         if add_labels_as_context:
             if input_prompt:
-                input_prompt = f"{input_prompt} {' '.join(self.start_tags)} ".strip(" ")
+                input_prompt = (
+                    f"{input_prompt} {' '.join(self.start_tags_original)} ".strip(" ")
+                )
             else:
-                input_prompt = f"{' '.join(self.start_tags)} ".strip(" ")
+                input_prompt = f"{' '.join(self.start_tags_original)} ".strip(" ")
 
         dataset_words, dataset_labels = read_tsv(file_path)
 
