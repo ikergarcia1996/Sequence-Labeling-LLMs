@@ -25,8 +25,8 @@ export TRANSFORMERS_NO_ADVISORY_WARNINGS="true"
 
 for model_name in  \
 google/flan-t5-xl \
-/gaueko1/hizkuntza-ereduak/medT5/medT5-large \
-/gaueko1/hizkuntza-ereduak/medT5/medT5-xl \
+HiTZ/Medical-mT5-large \
+HiTZ/Medical-mT5-xl \
 google/flan-t5-large \
 razent/SciFive-large-Pubmed_PMC \
 google/mt5-large \
