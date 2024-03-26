@@ -46,7 +46,15 @@ We currently support:
 <p align="center">
     <br>
     <img src="resources/performance.png" width="60%"/>
+    <be>
+
+## How does it work?
+We implement our constrained decoding algorithm using a Finite State Automaton. At each state, the model can generate only a set of valid tokens. This set includes copying the next word from the input (if the word is split by the tokenizer into multiple tokens, all of them are copied to prevent splitting of words). It can also open an HTML tag, but only if no tag remains open, or close it, but only if we have already opened a tag and copied a word. The generation process ends when all the words in the input have been copied into the output and no label remains open.  
+
+<p align="center">
     <br>
+    <img src="resources/Automata.png" width="60%"/>
+    <be>
 
 ## Installation
 
