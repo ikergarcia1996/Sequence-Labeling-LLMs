@@ -136,3 +136,4 @@ other/*
 *.ipynb
 
 lrec/*
+wandb/

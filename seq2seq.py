@@ -1,46 +1,30 @@
+import argparse
+import json
+import math
+import os
+from typing import List
+
+import torch
+import torch.nn as nn
+import wandb
+from accelerate import Accelerator
+from torch.optim import AdamW
+from torch.utils.data import DataLoader
+from tqdm.auto import tqdm
 from transformers import (
+    PreTrainedModel,
     PreTrainedTokenizerBase,
+    get_scheduler,
+    set_seed,
 )
 from transformers.models.auto.modeling_auto import MODEL_FOR_CAUSAL_LM_MAPPING_NAMES
 
-import argparse
-import math
-import os
+from constrained_generation import constrained_beam_search, unconstrained_beam_search
 from dataset import get_dataloader, get_task_tags
-
-
-from load_model import load_model
-
 from evaluate import (
     evaluate_most_probable,
 )
-
-
-from typing import List
-import json
-
-from tqdm.auto import tqdm
-
-
-from torch.utils.data import DataLoader
-import torch
-import torch.nn as nn
-
-from accelerate import Accelerator
-
-from transformers import (
-    get_scheduler,
-    set_seed,
-    PreTrainedModel,
-)
-
-from torch.optim import AdamW
-
-
-import wandb
-
-
-from constrained_generation import constrained_beam_search, unconstrained_beam_search
+from load_model import load_model
 
 
 def gen_batch(iterable, n=1):
@@ -170,7 +154,7 @@ def parse_args():
         help="The optimizer to use. Adafactor is recommended for training T5, mT5 and FLAN models. "
         "AdamW is recommended for LoRA and decoder-only models. Adafactor requires fairseq, you can install it with "
         "pip install fairseq.",
-        choices=["adamw", "adamw8bits", "adafactor"],
+        choices=["adamw", "adamw8bits", "adafactor", "deepspeed"],
     )
 
     parser.add_argument(
@@ -682,16 +666,16 @@ def seq2seq(
 
     if not constrained_generation:
         print(
-            f"WARNING!!! Constrained generation is disabled, are you sure you want to do this?\n"
-            f"Use --constrained_generation to enable it."
+            "WARNING!!! Constrained generation is disabled, are you sure you want to do this?\n"
+            "Use --constrained_generation to enable it."
         )
 
     if constrained_generation and unconstrained_generation:
         print(
-            f"We will use constrained generation and unconstrained generation. This means that we will run two "
-            f"inference runs for each dataset. This is useful if you want to compare the performance of the model "
-            f"with and without the constraints. If you don't want to run unconstrained generation, please remove "
-            f"the --unconstrained_generation flag."
+            "We will use constrained generation and unconstrained generation. This means that we will run two "
+            "inference runs for each dataset. This is useful if you want to compare the performance of the model "
+            "with and without the constraints. If you don't want to run unconstrained generation, please remove "
+            "the --unconstrained_generation flag."
         )
 
     if quantization and train_tsvs is not None and not use_lora:
@@ -796,7 +780,7 @@ def seq2seq(
             trust_remote_code=trust_remote_code,
         )
 
-        print(f"Model loaded!")
+        print("Model loaded!")
 
         if source_lang:
             try:
@@ -930,6 +914,35 @@ def seq2seq(
                 clip_threshold=1.0,
                 # weight_decay=args.weight_decay,
             )
+        elif optim.lower() == "deepspeed":
+            from accelerate.utils import DummyOptim
+
+            kwargs = {
+                "optimizer": {
+                    "params": {
+                        "lr": learning_rate,
+                        "betas": (0.9, 0.999),
+                        "eps": 1e-8,
+                        "weight_decay": weight_decay,
+                    }
+                },
+                "scheduler": {
+                    "params": {
+                        "warmup_min_lr": 0.0,
+                        "warmup_max_lr": learning_rate,
+                        "warmup_num_steps": num_warmup_steps,
+                        "warmup_type": "linear",
+                        "total_num_steps": max_train_steps,
+                    }
+                },
+            }
+
+            optimizer = DummyOptim(
+                params=optimizer_grouped_parameters,
+                lr=learning_rate,
+                weight_decay=weight_decay,
+                kwargs=kwargs,
+            )
         else:
             raise ValueError(
                 f"Unknown optimizer: {optim}. Please choose from adamw, adafactor, adamw8bits"
@@ -939,12 +952,41 @@ def seq2seq(
             model, optimizer, train_dataloader
         )
 
-        lr_scheduler = get_scheduler(
-            name=lr_scheduler_type,
-            optimizer=optimizer,
-            num_warmup_steps=num_warmup_steps,
-            num_training_steps=max_train_steps,
-        )
+        if optim.lower() == "deepspeed":
+            from accelerate.utils import DummyScheduler
+
+            kwargs = {
+                "optimizer": {
+                    "params": {
+                        "lr": learning_rate,
+                        "betas": (0.9, 0.999),
+                        "eps": 1e-8,
+                        "weight_decay": weight_decay,
+                    }
+                },
+                "scheduler": {
+                    "params": {
+                        "warmup_min_lr": 0.0,
+                        "warmup_max_lr": learning_rate,
+                        "warmup_num_steps": num_warmup_steps,
+                        "warmup_type": "linear",
+                        "total_num_steps": max_train_steps,
+                    }
+                },
+            }
+            lr_scheduler = DummyScheduler(
+                optimizer=optimizer,
+                total_num_steps=max_train_steps,
+                warmup_num_steps=num_warmup_steps,
+                kwargs=kwargs,
+            )
+        else:
+            lr_scheduler = get_scheduler(
+                name=lr_scheduler_type,
+                optimizer=optimizer,
+                num_warmup_steps=num_warmup_steps,
+                num_training_steps=max_train_steps,
+            )
 
         completed_steps = 0
         best_epoch_metric: float = -1
@@ -1050,13 +1092,13 @@ def seq2seq(
                             clean_up_tokenization_spaces=False,
                         )
                     )
-                    print(f"*** Sample of batch 0 ***")
+                    print("*** Sample of batch 0 ***")
                     print(f"-- Model inputs --\n{model_inputs}")
                     print(f"-- Labels --\n{labels}")
                     print(f"-- Words ids --\n{words_ids}")
                     print(f"-- Original sentences --\n{original_sentences}")
                     print(f"-- Gold sentences --\n{gold_sentences}")
-                    print(f"*** End of sample ***\n")
+                    print("*** End of sample ***\n")
                     first = False
 
                 if (
@@ -1296,7 +1338,20 @@ def seq2seq(
             tokenizer.save_pretrained(output_dir)
 
     if test_tsvs is not None:
-        print(f"========= TESTING =========")
+        print("========= TESTING =========")
+        # For Medical MT5, remove for final version
+        for lang in ["en", "es", "fr", "it"]:
+            for filename in test_tsvs:
+                if (
+                    filename
+                    == f"/ikerlariak/igarcia945/antidote_mt5-corpus/sequence-labeling-evaluation-datasets/{lang}/{lang}-neoplasm-test.tsv"
+                ):
+                    test_tsvs.append(
+                        f"/ikerlariak/igarcia945/antidote_mt5-corpus/sequence-labeling-evaluation-datasets/{lang}/{lang}-glaucoma-test.tsv"
+                    )
+                    test_tsvs.append(
+                        f"/ikerlariak/igarcia945/antidote_mt5-corpus/sequence-labeling-evaluation-datasets/{lang}/{lang}-mixed-test.tsv"
+                    )
 
         print(f"Loading best model from {output_dir}")
 

@@ -4,7 +4,6 @@ import os
 from typing import List, Optional, Tuple, Union
 
 import torch
-
 from transformers import (
     AutoConfig,
     AutoModelForCausalLM,
@@ -295,8 +294,8 @@ def load_model(
 
     if isinstance(quantization, str):
         quantization = int(quantization)
-    assert (quantization is None) or (
-        quantization in [4, 8]
+    assert (
+        (quantization is None) or (quantization in [4, 8])
     ), f"Quantization must be 4 or 8, or None for FP32/FP16 training. You passed: {quantization}"
 
     if not inference and quantization is not None and not use_lora:
@@ -335,12 +334,6 @@ def load_model(
         use_lora = True
 
     logging.info(f"Loading model model from {model_weights_name_or_path}")
-
-    MODEL_FOR_CAUSAL_LM_MAPPING_NAMES.update(
-        {
-            "stablelm_epoch": "LlamaForCausalLM",
-        }
-    )
 
     # Get the device map config
 
@@ -393,15 +386,11 @@ def load_model(
     # Load the model weights
 
     #  Get the quantization config
-    quant_args = {}
     torch_dtype = (
         torch_dtype if torch_dtype in ["auto", None] else getattr(torch, torch_dtype)
     )
 
     if quantization is not None:
-        quant_args = (
-            {"load_in_4bit": True} if quantization == 4 else {"load_in_8bit": True}
-        )
         if quantization == 4:
             bnb_config = BitsAndBytesConfig(
                 load_in_4bit=True,
@@ -442,20 +431,40 @@ def load_model(
         model_type = "causal"
 
     else:
-        raise ValueError(
-            f"Model {model_weights_name_or_path} of type {config.model_type} is not supported by CoLLIE."
-            "Supported models are:\n"
-            f"Seq2SeqLM: {MODEL_FOR_SEQ_TO_SEQ_CAUSAL_LM_MAPPING_NAMES}\n"
-            f"CausalLM: {MODEL_FOR_CAUSAL_LM_MAPPING_NAMES}\n"
+        logging.warning(
+            f"Model {model_weights_name_or_path} is not in the "
+            f"MODEL_FOR_SEQ_TO_SEQ_CAUSAL_LM_MAPPING_NAMES or MODEL_FOR_CAUSAL_LM_MAPPING_NAMES. "
+            f"We will attempt load it as a CausalLM model. This will fail if the model is not a CausalLM model."
         )
+        load_fn = AutoModelForCausalLM
+        tokenizer.padding_side = "left"
+        model_type = "causal"
 
     #  Load the model weights
     # Flash attention 2 was added to HuggingFace transformers very recently. Let's add it as kwargs to the load function
     # so if it is set to False, we can load the model in older versions of transformers.
     if use_flash_attention:
         kwargs = {"use_flash_attention_2": True}
+        logging.info("Loading the model with flash attention 2")
     else:
         kwargs = {}
+        logging.info(
+            "Loading the model without flash attention. If the model supports it, "
+            "you can enable it by addding 'use_flash_attention: true' to "
+            "your config file."
+        )
+
+    logging.info(
+        "Loading model with config:\n"
+        f"pretrained_model_name_or_path: {model_weights_name_or_path}\n"
+        f"device_map: {device_map}\n"
+        f"max_memory: {max_memory}\n"
+        f"quantization_config: {bnb_config}\n"
+        f"torch_dtype: {torch_dtype}\n"
+        f"config: {config}\n"
+        f"trust_remote_code: {trust_remote_code}\n"
+        f"kwargs: {kwargs}\n"
+    )
 
     model: PreTrainedModel = load_fn.from_pretrained(
         pretrained_model_name_or_path=model_weights_name_or_path,
@@ -465,7 +474,6 @@ def load_model(
         torch_dtype=torch_dtype,
         config=config,
         trust_remote_code=trust_remote_code,
-        **quant_args,
         **kwargs,
     )
 

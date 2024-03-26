@@ -1,0 +1,1 @@
+Scripts to reproduce the results of the "Medical mT5: An Open-Source Multilingual Text-to-Text LLM for The Medical Domain" LREC-Coling 2024 paper. 
