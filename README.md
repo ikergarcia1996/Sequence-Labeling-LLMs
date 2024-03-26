@@ -1,6 +1,6 @@
 <p align="center">
     <br>
-    <img src="resources/logo.png" width="900"/>
+    <img src="resources/logo.png" width="100%"/>
     <br>
 <a href="https://twitter.com/intent/tweet?text=Wow:&url=https%3A%2F%2Fgithub.com%2Fikergarcia1996%2FSequence-Labeling-LLMs"><img alt="Twitter" src="https://img.shields.io/twitter/url?style=social&url=https%3A%2F%2Fgithub.com%2Fikergarcia1996%2FSequence-Labeling-LLMs"></a>
 <a href="https://github.com/ikergarcia1996/Sequence-Labeling-LLMs/blob/main/LICENSE.md"><img alt="License" src="https://img.shields.io/github/license/ikergarcia1996/Sequence-Labeling-LLMs"></a>
@@ -43,13 +43,10 @@ We currently support:
 
 ## Evaluation
 
-| Model                                                    | F1 (CoNLL2003 English) |
-|----------------------------------------------------------|------------------------|
-| FlanT5-large, Adafactor                                  | 92,9                   |
-| FlanT5-large, LoRA , 4 bits quatization, AdamW           | 91,1                   |
-| FlanT5-large, LoRA , 4 bits quatization, AdamW 8 bits    | 91,7                   |
-| OpenLLamA v2 3B, LoRA , 4 bits quatization               | 91,1                   |
-| OpenLLaMA v2 3B, in-context learning, 4 bits quatization | Running                |
+<p align="center">
+    <br>
+    <img src="resources/performance.png" width="60%"/>
+    <br>
 
 ## Installation
 
