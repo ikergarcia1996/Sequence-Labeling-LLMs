@@ -140,4 +140,7 @@ wandb/
 
 Medical-MT5/
 
-Antifote_mT5_5/
+Antidote_mT5_5/
+
+*out.txt
+*err.txt

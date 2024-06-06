@@ -1,8 +1,8 @@
 #!/bin/bash
 #SBATCH --job-name=medMT5-multitask
-#SBATCH --cpus-per-task=16
+#SBATCH --cpus-per-task=1
 #SBATCH --gres=gpu:1
-#SBATCH --mem=64G
+#SBATCH --mem=32G
 #SBATCH --output=medMT5-multitask.out.txt
 #SBATCH --error=medMT5-multitask.err.txt
 
