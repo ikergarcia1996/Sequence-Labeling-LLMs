@@ -1,6 +1,6 @@
 <p align="center">
     <br>
-    <img src="resources/logo.png" width="900"/>
+    <img src="resources/logo.png" width="100%"/>
     <br>
 <a href="https://twitter.com/intent/tweet?text=Wow:&url=https%3A%2F%2Fgithub.com%2Fikergarcia1996%2FSequence-Labeling-LLMs"><img alt="Twitter" src="https://img.shields.io/twitter/url?style=social&url=https%3A%2F%2Fgithub.com%2Fikergarcia1996%2FSequence-Labeling-LLMs"></a>
 <a href="https://github.com/ikergarcia1996/Sequence-Labeling-LLMs/blob/main/LICENSE.md"><img alt="License" src="https://img.shields.io/github/license/ikergarcia1996/Sequence-Labeling-LLMs"></a>
@@ -12,7 +12,7 @@
 </p>
 
 This repository contains the code for performing Sequence Labelling 
-(Named Entity Recognition) with Language Model Logits (LLMs) as a Text2Text 
+ with Language Models (LLMs) as a Text2Text 
 constrained generation task. The code is built on top of 
 🤗HuggingFace's [Transformers](https://huggingface.co/docs/transformers/index) and
 🤗HuggingFace's [Accelerate](https://huggingface.co/docs/accelerate/index) library.
@@ -43,13 +43,18 @@ We currently support:
 
 ## Evaluation
 
-| Model                                                    | F1 (CoNLL2003 English) |
-|----------------------------------------------------------|------------------------|
-| FlanT5-large, Adafactor                                  | 92,9                   |
-| FlanT5-large, LoRA , 4 bits quatization, AdamW           | 91,1                   |
-| FlanT5-large, LoRA , 4 bits quatization, AdamW 8 bits    | 91,7                   |
-| OpenLLamA v2 3B, LoRA , 4 bits quatization               | 91,1                   |
-| OpenLLaMA v2 3B, in-context learning, 4 bits quatization | Running                |
+<p align="center">
+    <br>
+    <img src="resources/performance.png" width="60%"/>
+    <be>
+
+## How does it work?
+We implement our constrained decoding algorithm using a Finite State Automaton. At each state, the model can generate only a set of valid tokens. This set includes copying the next word from the input (if the word is split by the tokenizer into multiple tokens, all of them are copied to prevent splitting of words). It can also open an HTML tag, but only if no tag remains open, or close it, but only if we have already opened a tag and copied a word. The generation process ends when all the words in the input have been copied into the output and no label remains open.  
+
+<p align="center">
+    <br>
+    <img src="resources/Automata.png" width="60%"/>
+    <be>
 
 ## Installation
 
