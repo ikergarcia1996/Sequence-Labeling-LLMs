@@ -2,7 +2,7 @@ import itertools
 import math
 from dataclasses import dataclass
 from multiprocessing import Pool
-from typing import Any, List, Optional, Union
+from typing import Any, List, Literal, Optional, Union
 
 import numpy as np
 from torch.utils.data import ConcatDataset, DataLoader, Dataset
@@ -72,6 +72,10 @@ def get_task_tags(filepath):
     start_tags = [f"<{label}>" for label in task_labels]
     end_tags = [f"</{label}>" for label in task_labels]
 
+    # Show the tags
+    start_tags.sort()
+    end_tags.sort()
+
     print(f"Start tags: {start_tags}")
     print(f"End tags: {end_tags}")
     return start_tags, end_tags
@@ -85,6 +89,7 @@ def get_task_labels(filepath):
             if label != "O":
                 task_labels.append(label[2:])
     task_labels = list(set(task_labels))
+    task_labels.sort()
     print(f"Task labels: {task_labels}")
     return task_labels
 
@@ -104,82 +109,194 @@ def compute_words_ids_old(tokenizer: PreTrainedTokenizerBase, sentence: str):
 
 
 def compute_words_ids(tokenizer: PreTrainedTokenizerBase, sentence: str):
-    if tokenizer.is_fast and "llama" not in tokenizer.name_or_path.lower():
-        # LLaMA does not compute word_ids, see: https://github.com/huggingface/transformers/issues/25082
-        tokenized_sentence = tokenizer([sentence], add_special_tokens=False)
-        words_ids = tokenized_sentence.word_ids()
-    else:
-        tokenized_sentence = tokenizer(sentence, add_special_tokens=False).input_ids
-        current_char = 0
-        current_word = 0
-        words_ids = []
-        for token_id in tokenized_sentence:
-            words_ids.append(current_word)
-            token = tokenizer.decode(token_id)
-            current_char += len(token)
-            if current_char + 1 < len(sentence) and sentence[current_char] == " ":
-                current_word += 1
-                current_char += 1
+    # if tokenizer.is_fast and "llama" not in tokenizer.name_or_path.lower():
+    #    # LLaMA does not compute word_ids, see: https://github.com/huggingface/transformers/issues/25082
+    #    tokenized_sentence = tokenizer([sentence], add_special_tokens=False)
+    #    words_ids = tokenized_sentence.word_ids()
+    # else:
+    tokenized_sentence = tokenizer(sentence, add_special_tokens=False).input_ids
+    current_char = 0
+    current_word = 0
+    words_ids = []
+    for token_id in tokenized_sentence:
+        words_ids.append(current_word)
+        token = tokenizer.decode(token_id).strip()
+        current_char += len(token)
+        if current_char + 1 < len(sentence) and sentence[current_char] == " ":
+            current_word += 1
+            current_char += 1
 
     return words_ids
 
 
 def auto_detect_if_we_need_to_add_spaces_around_tags(
     tokenizer: PreTrainedTokenizerBase,
-):
+) -> str:
     """
-    Auto-detect if we need to add spaces around tags. This parameter is very important and depends on
-    the tokenizer used. For T5 tokenizer, we should not add spaces around tags, because we would introduce
-    space tokens that were not present in the original sentence. For LLaMA or Bloom tokenizers, we need to
-    add spaces, else the token id for the word after the tag will be wrong.
+    Auto-detect how we need to format the target sentence depending on the tokenizer. Modes:
+        - "together": The president<Person>Obama</Person>went to<Location>New York</Location>.
+        - "after": The president<Person> Obama</Person> went to<Location>New York </Location>.
+        - "both": The president <Person> Obama </Person>went to <Location> New York </Location>.
     Args:
         tokenizer: Model tokenizer
-    Returns: True if we need to add spaces around tags, False otherwise
+    Returns: tokenizer mode: "together", "after" or "both"
     """
 
-    dummy_text = "a a"
-    token_ids = tokenizer.encode(text=dummy_text, add_special_tokens=False)
+    # Special case for T5 tokenizer
+    # This tokenzier is weird, I tested it and not
+    # adding spaces around tags gives better results
+    # So we will always return "together" for T5 tokenizer
+    if "t5" in tokenizer.__class__.__name__.lower():
+        print(
+            "We have auto-detected that the tokenizer is a T5 tokenizer.\n"
+            "We will tokenize the target sentence as follows: <Person>Obama</Person>went to<Location>New York</Location>.\n"
+            "If the contrained F1 score is lower than expected, or the unconstrained F1 score is higher than the constrained F1 score, "
+            "it is probably related to the tokenization of the target sentence. Open an issue on the GitHub repository or"
+            "manually edit the `auto_detect_if_we_need_to_add_spaces_around_tags` function in the `dataset.py` file."
+        )
+        return "together"
 
-    if len(token_ids) > 2:
-        print(
-            f"\nWe have automatically determined that the tokenizer {tokenizer.name_or_path} does not require "
-            f"spaces around tags. This is because the tokenizer requires {len(token_ids)} tokens to encode "
-            f"the sentence '{dummy_text}'. Therefore the tokenizer would add space tokens not present in the original "
-            f"sentence. Here is an example of how we will encode the sentences:\n"
-            f"<Person>Obama</Person>went to<Location>New York</Location>.\n"
-            f"If you find unexpectedly low performance, or that unconstrained decoding gets better results than "
-            f"constrained decoding, it is likely that this setting is wrong. In this case, you will need to manually "
-            f"inspect the tokenizer and make the appropriate changes in the code. You can also open an "
-            f"issue at https://github.com/ikergarcia1996/Sequence-Labeling-LLMs/issues\n"
-        )
-        return False
-    else:
-        print(
-            f"\nWe have automatically determined that the tokenizer {tokenizer.name_or_path} requires "
-            f"spaces around tags. This is because the tokenizer requires {len(token_ids)} tokens to encode "
-            f"the sentence '{dummy_text}'. Therefore the tokenizer does not add space tokens around tags. "
-            f"Here is an example of how we will encode the sentences:\n"
-            f"<Person> Obama </Person> went to <Location> New York </Location> .\n"
-            f"If you find unexpectedly low performance, or that unconstrained decoding gets better results than "
-            f"constrained decoding, it is likely that this setting is wrong. In this case, you will need to manually "
-            f"inspect the tokenizer and make the appropriate changes in the code. You can also open an "
-            f"issue at https://github.com/ikergarcia1996/Sequence-Labeling-LLMs/issues\n"
-        )
+    def compare_tokenizations(labeled: List[int], unlabeled: List[int]):
+        """
+        Test if all the tokens in 'unlabeled' are present in 'labeled'
+        Also test if no whitespace token is present in labeled
+        Also test if the labels are in the sentence
+
+        Args:
+            labeled: List of token ids of the labeled sentence
+            unlabeled: List of token ids of the unlabeled sentence
+
+        Returns: True if all tokens are present in labeled and no whitespace token is present in labeled
+        """
+        # print(labeled)
+        # print(unlabeled)
+        for token in unlabeled:
+            if token not in labeled:
+                return False
+            else:
+                # Remove
+                labeled.remove(token)
+
+        # Check if labels are in the sentence
+        label_s = tokenizer.encode("<Person>", add_special_tokens=False)
+        label_e = tokenizer.encode("</Person>", add_special_tokens=False)
+        for token in label_s:
+            if token not in labeled:
+                return False
+            else:
+                labeled.remove(token)
+        for token in label_e:
+            if token not in labeled:
+                return False
+            else:
+                labeled.remove(token)
+
+        # Check if there are no whitespace tokens
+        for token in labeled:
+            if tokenizer.decode(token).strip() == "":
+                return False
+
         return True
 
+    unlabeled = "President Obama president"
+    unlabeled = tokenizer.encode(unlabeled, add_special_tokens=False)
 
-def format_target_sentence(words: List[str], labels: List[str], add_spaces_label: bool):
+    # Test together
+    labeled = "President<Person>Obama</Person>president"
+    labeled = tokenizer.encode(labeled, add_special_tokens=False)
+
+    if compare_tokenizations(labeled, unlabeled):
+        print(
+            "We have auto-detected that the tokenizer for the model requires no whitespace around tags.\n"
+            "We will tokenize the target sentence as follows: <Person>Obama</Person>went to<Location>New York</Location>.\n"
+            "If the contrained F1 score is lower than expected, or the unconstrained F1 score is higher than the constrained F1 score, "
+            "it is probably related to the tokenization of the target sentence. Open an issue on the GitHub repository or "
+            "manually edit the `auto_detect_if_we_need_to_add_spaces_around_tags` function in the `dataset.py` file."
+        )
+        return "together"
+
+    # Test after
+    labeled = "President<Person> Obama</Person> president"
+    labeled = tokenizer.encode(labeled, add_special_tokens=False)
+    if compare_tokenizations(labeled, unlabeled):
+        print(
+            "We have auto-detected that the tokenizer for the model requires a whitespace after tags.\n"
+            "We will tokenize the target sentence as follows: <Person> Obama</Person> went to<Location> New York</Location>.\n"
+            "If the contrained F1 score is lower than expected, or the unconstrained F1 score is higher than the constrained F1 score, "
+            "it is probably related to the tokenization of the target sentence. Open an issue on the GitHub repository or"
+            "manually edit the `auto_detect_if_we_need_to_add_spaces_around_tags` function in the `dataset.py` file."
+        )
+        return "after"
+
+    # Test both
+    labeled = "President <Person> Obama </Person> president"
+    labeled = tokenizer.encode(labeled, add_special_tokens=False)
+    if compare_tokenizations(labeled, unlabeled):
+        print(
+            "We have auto-detected that the tokenizer for the model requires a whitespace before and after tags.\n"
+            "We will tokenize the target sentence as follows: <Person> Obama </Person> went to <Location> New York </Location>.\n"
+            "If the contrained F1 score is lower than expected, or the unconstrained F1 score is higher than the constrained F1 score, "
+            "it is probably related to the tokenization of the target sentence. Open an issue on the GitHub repository or "
+            "manually edit the `auto_detect_if_we_need_to_add_spaces_around_tags` function in the `dataset.py` file."
+        )
+        return "both"
+
+    print(
+        "WARNING!!! We could not auto-detect the correct tokenization mode for the target sentence. "
+        "We will use the default mode and add whitespaces around tags.\n"
+        "Here is an example <Person> Obama </Person> went to <Location> New York </Location>.\n"
+        "But this may not be the correct tokenization for the model. If the model does not perform well, "
+        "you may need to manually edit the `auto_detect_if_we_need_to_add_spaces_around_tags` function in the `dataset.py` file.\n"
+        "You can also open an issue on the GitHub repository."
+    )
+    return "both"
+
+
+def format_label(
+    label: str, is_start: bool, format: Literal["together", "after", "both"]
+):
+    """
+    Format label for seq2seq models
+    Args:
+        label: "PER"
+        is_start: Whether the label is a start label
+        format: "together", "after" or "both"
+    Returns: Formatted label
+    """
+    if is_start:
+        if format == "together":
+            return f"<{label}>"
+        elif format == "after":
+            return f"<{label}> "
+        elif format == "both":
+            return f" <{label}> "
+    else:
+        if format == "together":
+            return f"</{label}>"
+        elif format == "after":
+            return f"</{label}> "
+        elif format == "both":
+            return f" </{label}> "
+
+
+def format_target_sentence(
+    words: List[str], labels: List[str], format: Literal["together", "after", "both"]
+) -> (str, str):
     """
        Format target sentence for seq2seq models
     Args:
         words: ["Obama","went","to","New","York", "."]
         labels: ["B-PER","O","O","B-LOC","I-LOC","O"]
-        add_spaces_label: If True, add spaces around tags. This parameter is very important and depends on
-        the tokenizer used. For T5 tokenizer, we should not add spaces around tags, because we would introduce
-        space tokens that were not present in the original sentence. For LLaMA or Bloom tokenizers, we need to
-        add spaces, else the token id for the word after the tag will be wrong.
-    Returns: <Person>Obama</Person>went to<Location>New York</Location>. if add_spaces_label is False
-             <Person> Obama </Person> went to <Location> New York </Location> . if add_spaces_label is True
+        format: "together", "after" or "both"
+    Returns: Tuple with the following elements:
+        - Original sentence
+        - Formatted target sentence
+            If format is "together":
+                <PER>Obama</PER>went to<LOC>New York</LOC>.
+            If format is "after":
+                <PER> Obama</PER> went to <LOC> New York</LOC> .
+            If format is "both":
+                <PER> Obama </PER> went to <LOC> New York </LOC> .
 
     """
 
@@ -190,9 +307,7 @@ def format_target_sentence(words: List[str], labels: List[str], add_spaces_label
     for word, label in zip(words, labels):
         if label == "O":
             if inside_entity:
-                target.append(
-                    f"</{prev_label}>" if not add_spaces_label else f" </{prev_label}> "
-                )
+                target.append(format_label(prev_label, is_start=False, format=format))
                 prev_is_word = False
                 inside_entity = False
             if prev_is_word:
@@ -201,15 +316,11 @@ def format_target_sentence(words: List[str], labels: List[str], add_spaces_label
             prev_is_word = True
         elif label.startswith("B-"):
             if inside_entity:
-                target.append(
-                    f"</{prev_label}>" if not add_spaces_label else f" </{prev_label}> "
-                )
+                target.append(format_label(prev_label, is_start=False, format=format))
                 prev_is_word = False
                 inside_entity = False
             prev_label = label2name(label[2:])
-            target.append(
-                f"<{prev_label}>" if not add_spaces_label else f" <{prev_label}> "
-            )
+            target.append(format_label(prev_label, is_start=True, format=format))
             target.append(word)
             prev_is_word = True
             inside_entity = True
@@ -224,16 +335,25 @@ def format_target_sentence(words: List[str], labels: List[str], add_spaces_label
             )
 
     if inside_entity:
-        target.append(
-            f"</{prev_label}>" if not add_spaces_label else f" </{prev_label}> "
-        )
+        target.append(format_label(prev_label, is_start=False, format=format))
+
+    # Special case for after format
+    # If the sentence starts by a label, we need to remove the whitespace after the label
+    # else the id of the first token will change
+    # ('AL', 3702) ('-', 20) ('AIN', 208497)
+    # If we add whitespace ('<Location>', 255031) (' AL', 17405) ('-', 20) ('AIN', 208497)
+    # If we do not add whitespace ('<Location>', 255031) ('AL', 3702) ('-', 20) ('AIN', 208497)
+
+    if format == "after":
+        if labels[0] != "O":
+            target[0] = target[0].strip(" ")
 
     return " ".join(words).strip(), "".join(target).strip()
 
 
 def prepare_sl(
     tokenizer: PreTrainedTokenizerBase,
-    add_spaces_around_tags: bool,
+    add_spaces_around_tags: Literal["together", "after", "both"],
     words: List[str],
     labels: List[str],
     max_source_len: int,
@@ -246,7 +366,7 @@ def prepare_sl(
     Prepare data for seq2seq model
     Args:
         tokenizer: Model tokenizer
-        add_spaces_around_tags: If True, add spaces around tags
+        add_spaces_around_tags: Format for the target sentence
         words: List of words in the sentence we want to label
         labels: List of gold labels for each word
         max_source_len: Max length of the source sentence
@@ -274,8 +394,13 @@ def prepare_sl(
     )
     encoder_inputs_original = encoder_inputs
 
+    if is_encoder_decoder:
+        tokenizer.padding_side = "right"
+    else:
+        tokenizer.padding_side = "left"
+
     if tokenizer.chat_template is not None:
-        print("Chat template found in the tokenizer. We will apply it to the input.")
+        # print("Chat template found in the tokenizer. We will apply it to the input.")
         encoder_inputs = tokenizer.apply_chat_template(
             [{"role": "user", "content": encoder_inputs}],
             tokenize=False,
@@ -326,6 +451,7 @@ def prepare_sl(
         padding=False,
         truncation=True,
         return_tensors=None,
+        add_special_tokens=tokenizer.chat_template is None,
     )
 
     if is_encoder_decoder:
@@ -335,6 +461,7 @@ def prepare_sl(
             padding=False,
             truncation=True,
             return_tensors=None,
+            add_special_tokens=tokenizer.chat_template is None,
         )
 
         if train:
@@ -349,6 +476,7 @@ def prepare_sl(
             padding=False,
             truncation=True,
             return_tensors=None,
+            add_special_tokens=tokenizer.chat_template is None,
         )
 
         if train:
@@ -371,7 +499,7 @@ def prepare_sl(
             truncation=True,
             padding=False,
             return_tensors=None,
-            add_special_tokens=True,
+            add_special_tokens=tokenizer.chat_template is None,
         )["input_ids"]
 
         # Remove the last token if it is an eos token
@@ -540,6 +668,20 @@ class SequenceLabellingDataset(Dataset):
             )
 
         self.dataset = list(itertools.chain.from_iterable(dataset))
+        if not train:
+            self.dataset = self.dataset[:100]
+
+        # for n, x in enumerate(self.dataset[:25]):
+        #    labels = x["labeled_sentence_ids"]
+        #    print(n)
+        #    print(
+        #        tokenizer.decode(
+        #            labels,
+        #            skip_special_tokens=False,
+        #            clean_up_tokenization_spaces=False,
+        #        )
+        #    )
+        #    print("==============================================================")
 
         print(f"Dataset size: {len(self.dataset)}")
 
@@ -714,6 +856,7 @@ class DataCollatorForSeq2Seq:
                         [remainder, feature["loss_weight_mask"]]
                     ).astype(np.float32)
 
+        # print(self.tokenizer.padding_side)
         features = self.tokenizer.pad(
             features,
             padding=self.padding,

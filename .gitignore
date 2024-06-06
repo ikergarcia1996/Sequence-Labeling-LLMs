@@ -135,5 +135,9 @@ other/*
 
 *.ipynb
 
-lrec/*
+lrec/
 wandb/
+
+Medical-MT5/
+
+Antifote_mT5_5/

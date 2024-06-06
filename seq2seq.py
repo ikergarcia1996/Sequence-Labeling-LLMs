@@ -6,7 +6,6 @@ from typing import List
 
 import torch
 import torch.nn as nn
-import wandb
 from accelerate import Accelerator
 from torch.optim import AdamW
 from torch.utils.data import DataLoader
@@ -19,12 +18,13 @@ from transformers import (
 )
 from transformers.models.auto.modeling_auto import MODEL_FOR_CAUSAL_LM_MAPPING_NAMES
 
+import wandb
 from constrained_generation import constrained_beam_search, unconstrained_beam_search
 from dataset import get_dataloader, get_task_tags
 from evaluate import (
     evaluate_most_probable,
 )
-from load_model import load_model
+from load_model import find_end_turn_token, load_model
 
 
 def gen_batch(iterable, n=1):
@@ -406,6 +406,7 @@ def evaluate(
     original_txt: List[str] = []
     model_inputs_txt: List[str] = []
     samples_seen: int = 0
+    eos_token_id = find_end_turn_token(tokenizer)
 
     test_name = os.path.splitext(os.path.basename(dataloader.dataset.file_path))[0]
     if stage == "dev":
@@ -435,12 +436,22 @@ def evaluate(
                         range(len(dataloader.dataset.end_labels_ids))
                     ),
                     pad_token_id=tokenizer.pad_token_id,
-                    eos_token_id=tokenizer.eos_token_id,
+                    eos_token_id=eos_token_id,
                     max_length=max_length,
                     num_beams=num_beams,
                     num_return_sequences=num_return_sequences,
                     forced_bos_token_id=forced_bos_token,
                 )
+
+                # print(batch.labeled_sentence_ids)
+                # print(
+                #    tokenizer.batch_decode(
+                #        batch.labeled_sentence_ids,
+                #        skip_special_tokens=False,
+                #        clean_up_tokenization_spaces=False,
+                #    )
+                # )
+
             else:
                 generated_tokens = unconstrained_beam_search(
                     model_inputs=batch,
@@ -457,6 +468,7 @@ def evaluate(
                         batch.input_ids,
                         dim=1,
                         pad_index=tokenizer.pad_token_id,
+                        pad_first=tokenizer.padding_side == "left",
                     )
                 )
                 .cpu()
@@ -480,7 +492,6 @@ def evaluate(
                     accelerator.pad_across_processes(
                         batch.original_sentence_ids,
                         dim=1,
-                        pad_index=tokenizer.pad_token_id,
                     )
                 )
                 .cpu()
@@ -536,6 +547,8 @@ def evaluate(
                     clean_up_tokenization_spaces=False,
                 )
 
+                # print(gold_tokens)
+
                 original_sentences = tokenizer.batch_decode(
                     original_sentences,
                     skip_special_tokens=True,
@@ -554,7 +567,7 @@ def evaluate(
                 model_inputs_txt.extend(input_tokens)
 
                 for prediction, gold, orig, model_input_txt in zip(
-                    generated_tokens, gold_tokens, original_sentences, model_inputs_txt
+                    generated_tokens, gold_tokens, original_sentences, input_tokens
                 ):
                     print(
                         json.dumps(
@@ -1042,9 +1055,9 @@ def seq2seq(
                 ### DEBUG ###
                 if first and accelerator.is_local_main_process:
                     decodeable_inputs = batch.input_ids.clone()
-                    decodeable_inputs[
-                        decodeable_inputs == -100
-                    ] = tokenizer.pad_token_id
+                    decodeable_inputs[decodeable_inputs == -100] = (
+                        tokenizer.pad_token_id
+                    )
 
                     model_inputs = "\n".join(
                         tokenizer.batch_decode(
@@ -1056,9 +1069,9 @@ def seq2seq(
 
                     # Labels without -100
                     decodeable_labels = batch.labels.clone()
-                    decodeable_labels[
-                        decodeable_labels == -100
-                    ] = tokenizer.pad_token_id
+                    decodeable_labels[decodeable_labels == -100] = (
+                        tokenizer.pad_token_id
+                    )
 
                     labels = "\n".join(
                         tokenizer.batch_decode(
