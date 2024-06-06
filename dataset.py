@@ -42,7 +42,8 @@ def read_tsv(filepath) -> (List[List[str]], List[List[str]]):
                     try:
                         word, label, _ = line.split()
                     except ValueError:
-                        raise ValueError(f"Cannot split line: {line}")
+                        print(f"Cannot split line: {line}")
+                        continue
                 if word:
                     words.append(word)
                     labels.append(label)
@@ -271,6 +272,7 @@ def prepare_sl(
         if input_prompt
         else source_sentence
     )
+    encoder_inputs_original = encoder_inputs
 
     if tokenizer.chat_template is not None:
         print("Chat template found in the tokenizer. We will apply it to the input.")
@@ -288,7 +290,7 @@ def prepare_sl(
             if tokenizer.chat_template is not None:
                 labels = tokenizer.apply_chat_template(
                     [
-                        {"role": "user", "content": encoder_inputs},
+                        {"role": "user", "content": encoder_inputs_original},
                         {"role": "assistant", "content": target_sentence.strip(" ")},
                     ],
                     tokenize=False,
@@ -306,7 +308,7 @@ def prepare_sl(
             if tokenizer.chat_template is not None:
                 labels = tokenizer.apply_chat_template(
                     [
-                        {"role": "user", "content": encoder_inputs},
+                        {"role": "user", "content": encoder_inputs_original},
                         {"role": "assistant", "content": target_sentence.strip(" ")},
                     ],
                     tokenize=False,
