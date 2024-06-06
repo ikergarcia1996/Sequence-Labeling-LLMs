@@ -19,7 +19,7 @@ export OMP_NUM_THREADS=16
 echo CUDA_VISIBLE_DEVICES "${CUDA_VISIBLE_DEVICES}"
 
 
-for model in google/gemma-1.1-7b-it meta-llama/Meta-Llama-3-8B-Instruct CohereForAI/aya-23-8B CohereForAI/aya-101 google/mt5-xl bigscience/mt0-xl bigscience/mt0-xl
+for model in google/gemma-1.1-7b-it meta-llama/Meta-Llama-3-8B-Instruct CohereForAI/aya-23-8B CohereForAI/aya-101 google/mt5-xl bigscience/mt0-xl Qwen/Qwen2-7B-Instruct 01-ai/Yi-1.5-9B-Chat
 do
 accelerate launch --use_deepspeed --deepspeed_config_file deepspeed_configs/deepspeed_zero2.json --mixed_precision bf16 --num_processes 4 --num_machines 1 --dynamo_backend no seq2seq.py \
 --mixed_precision bf16 \

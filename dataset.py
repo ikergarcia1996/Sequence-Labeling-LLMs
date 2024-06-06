@@ -668,8 +668,6 @@ class SequenceLabellingDataset(Dataset):
             )
 
         self.dataset = list(itertools.chain.from_iterable(dataset))
-        if not train:
-            self.dataset = self.dataset[:100]
 
         # for n, x in enumerate(self.dataset[:25]):
         #    labels = x["labeled_sentence_ids"]
