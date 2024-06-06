@@ -96,6 +96,10 @@ def get_f1_model(model_name):
 
 
 def get_f1_model_zero(model_name):
+    if model_name=="HiTZ_Medical-mT5-xl":
+        model_name = "_gaueko1_hizkuntza-ereduak_medT5_medT5-xl"
+    if model_name=="HiTZ_Medical-mT5-large":
+        model_name = "_gaueko1_hizkuntza-ereduak_medT5_medT5-large"
     for dataset in ["e3c"]:
         for lang in ["en"]:
             for t_lang in ["en", "es", "fr", "it"]:
@@ -117,9 +121,9 @@ def get_f1_model_zero(model_name):
 if __name__ == "__main__":
     for model_name in [
         "google_mt5-large",
-        "MedicalMT5_mT5-large",
+        "HiTZ_Medical-mT5-large",
         "google_mt5-xl",
-        "MedicalMT5_mT5-xl",
+        "HiTZ_Medical-mT5-xl",
         "razent_SciFive-large-Pubmed_PMC",
         "google_flan-t5-large",
         "google_flan-t5-xl",
@@ -131,9 +135,9 @@ if __name__ == "__main__":
     print("\n\n\n")
     for model_name in [
         "google_mt5-large",
-        "_gaueko1_hizkuntza-ereduak_medT5_medT5-large",
+        "HiTZ_Medical-mT5-large",
         "google_mt5-xl",
-        "_gaueko1_hizkuntza-ereduak_medT5_medT5-xl",
+        "HiTZ_Medical-mT5-xl",
         "razent_SciFive-large-Pubmed_PMC",
         "google_flan-t5-large",
         "google_flan-t5-xl",

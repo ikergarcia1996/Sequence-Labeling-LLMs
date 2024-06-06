@@ -1,8 +1,8 @@
 #!/bin/bash
 #SBATCH --job-name=medMT5-singletask
-#SBATCH --cpus-per-task=16
+#SBATCH --cpus-per-task=1
 #SBATCH --gres=gpu:1
-#SBATCH --mem=64G
+#SBATCH --mem=32G
 #SBATCH --output=medMT5-singletask.out.txt
 #SBATCH --error=medMT5-singletask.err.txt
 
@@ -20,10 +20,8 @@ export WORLD_SIZE=1
 export TRANSFORMERS_NO_ADVISORY_WARNINGS="true"
 
 
+
 for model_name in  \
-razent/SciFive-large-Pubmed_PMC
-do
-for dataset in \
 google/flan-t5-large \
 google/flan-t5-xl \
 HiTZ/Medical-mT5-large \
@@ -31,6 +29,12 @@ HiTZ/Medical-mT5-xl \
 razent/SciFive-large-Pubmed_PMC \
 google/mt5-large \
 google/mt5-xl
+do
+for dataset in \
+en/en-e3c \
+es/es-e3c \
+fr/fr-e3c \
+it/it-e3c
 do
   modelpath=/scratch/igarcia945/
   modelparams="${model_name//"$modelpath"}"

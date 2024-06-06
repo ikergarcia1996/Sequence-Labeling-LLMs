@@ -135,5 +135,12 @@ other/*
 
 *.ipynb
 
-lrec/*
+lrec/
 wandb/
+
+Medical-MT5/
+
+Antidote_mT5_5/
+
+*out.txt
+*err.txt

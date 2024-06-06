@@ -1,8 +1,8 @@
 #!/bin/bash
 #SBATCH --job-name=medMT5-multitask
-#SBATCH --cpus-per-task=16
+#SBATCH --cpus-per-task=1
 #SBATCH --gres=gpu:1
-#SBATCH --mem=64G
+#SBATCH --mem=32G
 #SBATCH --output=medMT5-multitask.out.txt
 #SBATCH --error=medMT5-multitask.err.txt
 
@@ -30,7 +30,7 @@ HiTZ/Medical-mT5-xl \
 google/flan-t5-large \
 razent/SciFive-large-Pubmed_PMC \
 google/mt5-large \
-google/mt5-xl
+google/mt5-xl 
 do
   modelpath=/scratch/igarcia945/
   modelparams="${model_name//"$modelpath"}"

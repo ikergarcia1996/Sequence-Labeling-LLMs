@@ -196,6 +196,41 @@ def merge_lora_model(
     logging.info(f"Model merged and saved in {output_path}")
 
 
+def find_end_turn_token(tokenizer: PreTrainedTokenizerBase) -> int:
+    """
+    Find the end of turn token in the tokenizer chat template.
+    If the model does not have a chat template, the end of turn token will be the eos token.
+
+    Args:
+        tokenizer (`PreTrainedTokenizerBase`):
+            The tokenizer to find the end of turn token in.
+
+    Returns:
+        `int`:
+            The end of turn token.
+    """
+
+    if tokenizer.chat_template is None:
+        return tokenizer.eos_token_id
+
+    conversation = tokenizer.apply_chat_template(
+        [
+            {"role": "user", "content": "a"},
+            {"role": "assistant", "content": "a"},
+        ],
+        tokenize=True,
+        add_special_tokens=False,
+    )
+
+    end_turn_token = tokenizer.eos_token_id
+    for token in conversation[::-1]:
+        if tokenizer.decode(token) == "a":
+            break
+        end_turn_token = token
+
+    return end_turn_token
+
+
 def load_model(
     inference: bool,
     model_weights_name_or_path: str,
