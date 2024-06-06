@@ -24,7 +24,13 @@ export TRANSFORMERS_NO_ADVISORY_WARNINGS="true"
 # Run MultiTask
 
 for model_name in  \
-HiTZ/Medical-mT5-xl 
+google/flan-t5-xl \
+HiTZ/Medical-mT5-large \
+HiTZ/Medical-mT5-xl \
+google/flan-t5-large \
+razent/SciFive-large-Pubmed_PMC \
+google/mt5-large \
+google/mt5-xl 
 do
   modelpath=/scratch/igarcia945/
   modelparams="${model_name//"$modelpath"}"
