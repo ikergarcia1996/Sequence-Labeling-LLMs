@@ -73,11 +73,16 @@ done
 
 
 for model_name in  \
+<<<<<<< Updated upstream
 google/flan-t5-large \
 google/flan-t5-xl \
 HiTZ/Medical-mT5-large \
 HiTZ/Medical-mT5-xl \
 razent/SciFive-large-Pubmed_PMC \
+=======
+HiTZ/Medical-mT5-large \
+HiTZ/Medical-mT5-xl \
+>>>>>>> Stashed changes
 google/mt5-large \
 google/mt5-xl
 do
