@@ -36,6 +36,12 @@ def gen_batch(iterable, n=1):
 def experiment_done(experiment_dir: str, test_tsvs: List[str]):
     for test_tsv in test_tsvs:
         test_name = os.path.splitext(os.path.basename(test_tsv))[0]
+        dir_name = os.path.basename(os.path.basedir(test_tsv))
+        if len(dir_name) > 0:
+            test_name = f"{dir_name}_{test_name}"
+        else:
+            test_name = f"{test_name}"
+
         if not os.path.exists(os.path.join(experiment_dir, f"{test_name}.txt")):
             return False
     return True
@@ -73,7 +79,7 @@ def parse_args():
     parser.add_argument(
         "--num_beams",
         type=int,
-        default=4,
+        default=1,
         help="Number of beams to use for evaluation. This argument will be "
         "passed to ``model.generate``, which is used during ``evaluate`` and ``predict``.",
     )
@@ -150,7 +156,7 @@ def parse_args():
     parser.add_argument(
         "--optim",
         type=str,
-        default="adafactor",
+        default="adamw",
         help="The optimizer to use. Adafactor is recommended for training T5, mT5 and FLAN models. "
         "AdamW is recommended for LoRA and decoder-only models. Adafactor requires fairseq, you can install it with "
         "pip install fairseq.",
@@ -223,7 +229,7 @@ def parse_args():
     parser.add_argument(
         "--lora_alpha",
         type=int,
-        default=16,
+        default=32,
         help="The alpha parameter for LoRA. This is the learning rate multiplier for the quantized weights.",
     )
 
@@ -370,6 +376,16 @@ def print_trainable_parameters(model):
     return trainable_params, all_param, 100 * trainable_params / all_param
 
 
+def get_dtype(accelerator: Accelerator):
+    if accelerator.state.mixed_precision == "bf16":
+        dtype = "bfloat16"
+    elif accelerator.state.mixed_precision == "fp16":
+        dtype = "float16"
+    else:
+        dtype = None
+    return dtype
+
+
 def evaluate(
     dataloader: DataLoader,
     constrained_generation: bool,
@@ -385,18 +401,19 @@ def evaluate(
     train_step: int = -1,
     forced_bos_token: int = None,
 ):
-    print(f"***** Evaluating {dataloader.dataset.file_path} *****")
-    if epoch != -1:
-        print(f"  Epoch = {epoch}")
-        print(f"  Train step = {train_step}")
-    print(f"  Num examples = {len(dataloader.dataset)}")
-    print(
-        f"  Gen kwargs = "
-        f"{{'constrained_generation' : {constrained_generation}, "
-        f"'num_return_sequences': {num_return_sequences}, "
-        f"'num_beams': {num_beams}, "
-        f"'max_length': {max_length}}}"
-    )
+    if accelerator.is_local_main_process:
+        print(f"***** Evaluating {dataloader.dataset.file_path} *****")
+        if epoch != -1:
+            print(f"  Epoch = {epoch}")
+            print(f"  Train step = {train_step}")
+        print(f"  Num examples = {len(dataloader.dataset)}")
+        print(
+            f"  Gen kwargs = "
+            f"{{'constrained_generation' : {constrained_generation}, "
+            f"'num_return_sequences': {num_return_sequences}, "
+            f"'num_beams': {num_beams}, "
+            f"'max_length': {max_length}}}"
+        )
     print()
     os.makedirs(output_dir, exist_ok=True)
     model.eval()
@@ -409,10 +426,22 @@ def evaluate(
     eos_token_id = find_end_turn_token(tokenizer)
 
     test_name = os.path.splitext(os.path.basename(dataloader.dataset.file_path))[0]
+    dir_name = os.path.basename(os.path.dirname(dataloader.dataset.file_path))
+    if len(dir_name) > 0:
+        test_name = f"{dir_name}_{test_name}"
+    else:
+        test_name = f"{test_name}"
     if stage == "dev":
         filename = f"{test_name}_epoch_{epoch}_step_{train_step}_{'constrained' if constrained_generation else 'unconstrained'}"
     else:
         filename = f"{test_name}_{'constrained' if constrained_generation else 'unconstrained'}"
+
+    if accelerator.is_local_main_process:
+        print(f"Writing predictions to {os.path.join(output_dir, f'{filename}.jsonl')}")
+
+    dtype = get_dtype(accelerator)
+    if dtype is not None:
+        dtype = torch.float16 if dtype == "float16" else torch.bfloat16
 
     with open(os.path.join(output_dir, f"{filename}.jsonl"), "w", encoding="utf8") as f:
         for step, batch in enumerate(
@@ -424,24 +453,25 @@ def evaluate(
             )
         ):
             if constrained_generation:
-                generated_tokens = constrained_beam_search(
-                    model_inputs=batch,
-                    model=accelerator.unwrap_model(model),
-                    start_labels_ids=dataloader.dataset.start_labels_ids,
-                    end_labels_ids=dataloader.dataset.end_labels_ids,
-                    start_labels_names=list(
-                        range(len(dataloader.dataset.start_labels_ids))
-                    ),
-                    end_labels_names=list(
-                        range(len(dataloader.dataset.end_labels_ids))
-                    ),
-                    pad_token_id=tokenizer.pad_token_id,
-                    eos_token_id=eos_token_id,
-                    max_length=max_length,
-                    num_beams=num_beams,
-                    num_return_sequences=num_return_sequences,
-                    forced_bos_token_id=forced_bos_token,
-                )
+                with torch.cuda.amp.autocast(enabled=dtype is not None, dtype=dtype):
+                    generated_tokens = constrained_beam_search(
+                        model_inputs=batch,
+                        model=accelerator.unwrap_model(model),
+                        start_labels_ids=dataloader.dataset.start_labels_ids,
+                        end_labels_ids=dataloader.dataset.end_labels_ids,
+                        start_labels_names=list(
+                            range(len(dataloader.dataset.start_labels_ids))
+                        ),
+                        end_labels_names=list(
+                            range(len(dataloader.dataset.end_labels_ids))
+                        ),
+                        pad_token_id=tokenizer.pad_token_id,
+                        eos_token_id=eos_token_id,
+                        max_length=max_length,
+                        num_beams=num_beams,
+                        num_return_sequences=num_return_sequences,
+                        forced_bos_token_id=forced_bos_token,
+                    )
 
                 # print(batch.labeled_sentence_ids)
                 # print(
@@ -453,14 +483,15 @@ def evaluate(
                 # )
 
             else:
-                generated_tokens = unconstrained_beam_search(
-                    model_inputs=batch,
-                    model=accelerator.unwrap_model(model),
-                    max_length=max_length,
-                    num_beams=num_beams,
-                    num_return_sequences=num_return_sequences,
-                    forced_bos_token_id=forced_bos_token,
-                )
+                with torch.cuda.amp.autocast(enabled=dtype is not None, dtype=dtype):
+                    generated_tokens = unconstrained_beam_search(
+                        model_inputs=batch,
+                        model=accelerator.unwrap_model(model),
+                        max_length=max_length,
+                        num_beams=num_beams,
+                        num_return_sequences=num_return_sequences,
+                        forced_bos_token_id=forced_bos_token,
+                    )
 
             input_tokens = (
                 accelerator.gather(
@@ -576,7 +607,8 @@ def evaluate(
                                 "input_sentence": orig,
                                 "prediction": prediction,
                                 "gold": gold,
-                            }
+                            },
+                            ensure_ascii=False,
                         ),
                         file=f,
                     )
@@ -746,7 +778,8 @@ def seq2seq(
             wandb.config.num_train_epochs = num_train_epochs
 
     if train_tsvs is not None:
-        print(f"Loading model from {model_name_or_path}")
+        if accelerator.is_local_main_process:
+            print(f"Loading model from {model_name_or_path}")
 
         start_labels, end_labels = [], []
         for train_tsv in train_tsvs:
@@ -756,10 +789,11 @@ def seq2seq(
 
         if use_lora and add_labels_as_tokens:
             extended_model_path = os.path.join(output_dir, "extended_model")
-            print(
-                f"Using LoRA and add_labels_as_tokens, we will create a new model extending the original one with the "
-                f"labels as tokens. It will be saved in {extended_model_path}."
-            )
+            if accelerator.is_local_main_process:
+                print(
+                    f"Using LoRA and add_labels_as_tokens, we will create a new model extending the original one with the "
+                    f"labels as tokens. It will be saved in {extended_model_path}."
+                )
             model, tokenizer, model_type = load_model(
                 inference=True,
                 model_weights_name_or_path=model_name_or_path,
@@ -769,6 +803,7 @@ def seq2seq(
                 labels=start_labels + end_labels,
                 use_flash_attention=use_flash_attention,
                 trust_remote_code=trust_remote_code,
+                torch_dtype=get_dtype(accelerator),
             )
 
             model.save_pretrained(extended_model_path)
@@ -791,9 +826,10 @@ def seq2seq(
             use_gradient_checkpointing=quantization is not None or use_lora,
             use_flash_attention=use_flash_attention,
             trust_remote_code=trust_remote_code,
+            torch_dtype=get_dtype(accelerator),
         )
-
-        print("Model loaded!")
+        if accelerator.is_local_main_process:
+            print("Model loaded!")
 
         if source_lang:
             try:
@@ -824,8 +860,8 @@ def seq2seq(
             wandb.config.trainable_params = trainable_params
             wandb.config.all_param = all_param
             wandb.config.percent_trainable = percent_trainable
-
-        print(f"Loading training dataset from {train_tsvs}")
+        if accelerator.is_local_main_process:
+            print(f"Loading training dataset from {train_tsvs}")
         train_dataloader = get_dataloader(
             tokenizer=tokenizer,
             filenames=train_tsvs,
@@ -837,14 +873,17 @@ def seq2seq(
             input_prompt=None if prompt is None else prompt,
             num_workers=min(os.cpu_count(), 8),
             add_labels_as_context=add_labels_as_prompt,
+            verbosity=accelerator.is_local_main_process,
         )
 
         val_dataloaders = []
-        print(
-            f"Found {len(dev_tsvs)} validation datasets, we will average their scores for best model selection."
-        )
+        if accelerator.is_local_main_process:
+            print(
+                f"Found {len(dev_tsvs)} validation datasets, we will average their scores for best model selection."
+            )
         for dev_tsv in dev_tsvs:
-            print(f"Loading validation dataset from {dev_tsv}")
+            if accelerator.is_local_main_process:
+                print(f"Loading validation dataset from {dev_tsv}")
             val_dataloaders.append(
                 get_dataloader(
                     tokenizer=tokenizer,
@@ -857,6 +896,7 @@ def seq2seq(
                     input_prompt=None if prompt is None else prompt,
                     num_workers=min(os.cpu_count(), 8),
                     add_labels_as_context=add_labels_as_prompt,
+                    verbosity=accelerator.is_local_main_process,
                 )
             )
 
@@ -1351,7 +1391,8 @@ def seq2seq(
             tokenizer.save_pretrained(output_dir)
 
     if test_tsvs is not None:
-        print("========= TESTING =========")
+        if accelerator.is_local_main_process:
+            print("========= TESTING =========")
         # For Medical MT5, remove for final version
         for lang in ["en", "es", "fr", "it"]:
             for filename in test_tsvs:
@@ -1365,8 +1406,8 @@ def seq2seq(
                     test_tsvs.append(
                         f"/ikerlariak/igarcia945/antidote_mt5-corpus/sequence-labeling-evaluation-datasets/{lang}/{lang}-mixed-test.tsv"
                     )
-
-        print(f"Loading best model from {output_dir}")
+        if accelerator.is_local_main_process:
+            print(f"Loading best model from {output_dir}")
 
         if use_lora:
             if train_tsvs is not None:
@@ -1396,6 +1437,7 @@ def seq2seq(
             force_auto_device_map=force_auto_device_map,
             use_flash_attention=use_flash_attention,
             trust_remote_code=trust_remote_code,
+            torch_dtype=get_dtype(accelerator),
         )
 
         if source_lang:
@@ -1419,7 +1461,21 @@ def seq2seq(
         else:
             forced_bos_token = None
 
-        model = accelerator.prepare(model)
+        try:
+            # Avoid ValueError if we are running only inference with deepspeed zero3
+            accelerator.state.deepspeed_plugin.deepspeed_config[
+                "train_micro_batch_size_per_gpu"
+            ] = 1
+        except:
+            pass
+
+        try:
+            model = accelerator.prepare(model)
+        except AssertionError:
+            # Using zero2, we need an optimizer to prepare the model
+            # This optimizer does nothing, is just a dummy optimizer
+            optimizer = AdamW(model.parameters(), lr=learning_rate, eps=1e-7)
+            model, optimizer = accelerator.prepare(model, optimizer)
 
         for test_tsv in test_tsvs:
             print(f"Testing on {test_tsv}...")
@@ -1434,6 +1490,7 @@ def seq2seq(
                 input_prompt=None if prompt is None else prompt,
                 num_workers=min(os.cpu_count(), 8),
                 add_labels_as_context=add_labels_as_prompt,
+                verbosity=accelerator.is_local_main_process,
             )
 
             test_dataloader = accelerator.prepare(test_dataloader)

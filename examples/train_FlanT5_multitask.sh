@@ -36,7 +36,7 @@
   medial-domain-datasets/en/en-bc5cdr_disease-test.tsv \
   medial-domain-datasets/en/en-bc5cdr_chemical-test.tsv \
   medial-domain-datasets/es/es-pharmaconer-bsc-test.tsv \
-  --num_beams 4 \
+  --num_beams 1 \
   --num_return_sequences 1 \
   --model_name_or_path google/flan-t5-large \
   --per_device_train_batch_size 4 \
