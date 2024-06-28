@@ -884,6 +884,10 @@ def constrained_beam_search(
             "attention_mask": encoder_mask,
             "num_beams": num_beams,
             "decoder_start_token_id": model.generation_config.decoder_start_token_id,
+            "do_sample": False,
+            "temperature": None,
+            "top_k": None,
+            "top_p": None,
         }
         generation_config = copy.deepcopy(model.generation_config)
         model_kwargs = generation_config.update(**kwargs)
@@ -985,6 +989,10 @@ def unconstrained_beam_search(
         "num_beams": num_beams,
         "num_return_sequences": num_return_sequences,
         "forced_bos_token_id": forced_bos_token_id,
+        "do_sample": False,
+        "temperature": None,
+        "top_k": None,
+        "top_p": None,
     }
     with torch.no_grad():
         model.eval()

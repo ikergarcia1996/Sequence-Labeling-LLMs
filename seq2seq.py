@@ -449,7 +449,7 @@ def evaluate(
                 dataloader,
                 disable=not accelerator.is_local_main_process,
                 ascii=True,
-                desc=f"{os.path.splitext(os.path.basename(dataloader.dataset.file_path))[0]}",
+                desc=f"{test_name}",
             )
         ):
             if constrained_generation:

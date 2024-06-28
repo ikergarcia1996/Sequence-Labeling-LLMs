@@ -566,6 +566,8 @@ def load_model(
                     model, quantization=quantization
                 )
 
+                logging.warning(f"LoRA target modules: {lora_target_modules}")
+
             lora_config = LoraConfig(
                 r=lora_r,
                 lora_alpha=lora_alpha,
@@ -575,6 +577,7 @@ def load_model(
                 if model_type == "causal"
                 else TaskType.SEQ_2_SEQ_LM,
                 target_modules=lora_target_modules,
+                modules_to_save=["embed_tokens", "lm_head"],
             )
 
             model = get_peft_model(model, lora_config)

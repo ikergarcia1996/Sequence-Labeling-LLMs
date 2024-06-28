@@ -113,24 +113,26 @@ def compute_words_ids_old(tokenizer: PreTrainedTokenizerBase, sentence: str):
     return words_ids
 
 
-def compute_words_ids(tokenizer: PreTrainedTokenizerBase, sentence: str):
-    # if tokenizer.is_fast and "llama" not in tokenizer.name_or_path.lower():
-    #    # LLaMA does not compute word_ids, see: https://github.com/huggingface/transformers/issues/25082
-    #    tokenized_sentence = tokenizer([sentence], add_special_tokens=False)
-    #    words_ids = tokenized_sentence.word_ids()
-    # else:
+def compute_words_ids(tokenizer, sentence: str):
     tokenized_sentence = tokenizer(sentence, add_special_tokens=False).input_ids
-    current_char = 0
+    sentence = tokenizer.decode(tokenized_sentence, clean_up_tokenization_spaces=False)
+    words = sentence.split()
     current_word = 0
+    current_partial_word = []
     words_ids = []
     for token_id in tokenized_sentence:
         words_ids.append(current_word)
         token = tokenizer.decode(token_id).strip()
-        current_char += len(token)
-        if current_char + 1 < len(sentence) and sentence[current_char] == " ":
+        current_partial_word.append(token_id)
+        # print(token_id, token, current_partial_word, words[current_word])
+        if (
+            tokenizer.decode(current_partial_word).strip().lower()
+            == words[current_word].strip().lower()
+        ):
             current_word += 1
-            current_char += 1
+            current_partial_word = []
 
+    # print(sentence, words_ids)
     return words_ids
 
 
@@ -356,6 +358,8 @@ def format_target_sentence(
     if format == "after":
         if labels[0] != "O":
             target[0] = target[0].strip(" ")
+
+    print(format, target)
 
     return " ".join(words).strip(), "".join(target).strip()
 
