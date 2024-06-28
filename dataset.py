@@ -359,8 +359,6 @@ def format_target_sentence(
         if labels[0] != "O":
             target[0] = target[0].strip(" ")
 
-    print(format, target)
-
     return " ".join(words).strip(), "".join(target).strip()
 
 
