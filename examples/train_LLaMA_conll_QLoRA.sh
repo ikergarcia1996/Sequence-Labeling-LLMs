@@ -8,7 +8,7 @@ accelerate launch seq2seq.py \
 --test_tsvs examples/conll/en.conll.test.tsv \
 --num_beams 1 \
 --num_return_sequences 1 \
---model_name_or_path openlm-research/open_llama_3b_v2 \
+--model_name_or_path meta-llama/Meta-Llama-3-8B-Instruct \
 --per_device_train_batch_size 16 \
 --gradient_accumulation_steps 1 \
 --per_device_eval_batch_size 8 \
@@ -20,5 +20,5 @@ accelerate launch seq2seq.py \
 --eval_every_epochs 10 \
 --max_source_length 256 \
 --max_target_length 256 \
---output_dir results/conll/Open-LLama-3B_LoRA \
+--output_dir results/conll/Llama-3-8B-Instruct \
 --project_name SeqLabeling_w_LLMs

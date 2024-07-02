@@ -14,7 +14,7 @@ from label_names import label2name
 from tag_encoding import rewrite_labels
 
 
-def read_tsv(filepath) -> (List[List[str]], List[List[str]]):
+def read_tsv(filepath, verbosity: str = True) -> (List[List[str]], List[List[str]]):
     """
     READ tsv file in conll format
     Args:
@@ -42,7 +42,8 @@ def read_tsv(filepath) -> (List[List[str]], List[List[str]]):
                     try:
                         word, label, _ = line.split()
                     except ValueError:
-                        print(f"Cannot split line: {line}")
+                        if verbosity:
+                            print(f"Cannot split line: {line}")
                         continue
                 if word:
                     words.append(word)
@@ -51,7 +52,8 @@ def read_tsv(filepath) -> (List[List[str]], List[List[str]]):
             dataset_words.append(words)
             dataset_labels.append(labels)
 
-    print(f"Read {len(dataset_words)} sentences from {filepath}")
+    if verbosity:
+        print(f"Read {len(dataset_words)} sentences from {filepath}")
 
     dataset_labels = [
         rewrite_labels(labels, encoding="iob2") for labels in dataset_labels
@@ -60,8 +62,8 @@ def read_tsv(filepath) -> (List[List[str]], List[List[str]]):
     return dataset_words, dataset_labels
 
 
-def get_task_tags(filepath):
-    dataset_words, dataset_labels = read_tsv(filepath)
+def get_task_tags(filepath, verbosity: str = True):
+    dataset_words, dataset_labels = read_tsv(filepath, verbosity=verbosity)
     task_labels = []
     for sentence_labels in dataset_labels:
         for label in sentence_labels:
@@ -76,13 +78,15 @@ def get_task_tags(filepath):
     start_tags.sort()
     end_tags.sort()
 
-    print(f"Start tags: {start_tags}")
-    print(f"End tags: {end_tags}")
+    if verbosity:
+        print(f"Start tags: {start_tags}")
+        print(f"End tags: {end_tags}")
+
     return start_tags, end_tags
 
 
-def get_task_labels(filepath):
-    dataset_words, dataset_labels = read_tsv(filepath)
+def get_task_labels(filepath, verbosity: str = True):
+    dataset_words, dataset_labels = read_tsv(filepath, verbosity=verbosity)
     task_labels = []
     for sentence_labels in dataset_labels:
         for label in sentence_labels:
@@ -90,7 +94,8 @@ def get_task_labels(filepath):
                 task_labels.append(label[2:])
     task_labels = list(set(task_labels))
     task_labels.sort()
-    print(f"Task labels: {task_labels}")
+    if verbosity:
+        print(f"Task labels: {task_labels}")
     return task_labels
 
 
@@ -108,29 +113,31 @@ def compute_words_ids_old(tokenizer: PreTrainedTokenizerBase, sentence: str):
     return words_ids
 
 
-def compute_words_ids(tokenizer: PreTrainedTokenizerBase, sentence: str):
-    # if tokenizer.is_fast and "llama" not in tokenizer.name_or_path.lower():
-    #    # LLaMA does not compute word_ids, see: https://github.com/huggingface/transformers/issues/25082
-    #    tokenized_sentence = tokenizer([sentence], add_special_tokens=False)
-    #    words_ids = tokenized_sentence.word_ids()
-    # else:
+def compute_words_ids(tokenizer, sentence: str):
     tokenized_sentence = tokenizer(sentence, add_special_tokens=False).input_ids
-    current_char = 0
+    sentence = tokenizer.decode(tokenized_sentence, clean_up_tokenization_spaces=False)
+    words = sentence.split()
     current_word = 0
+    current_partial_word = []
     words_ids = []
     for token_id in tokenized_sentence:
         words_ids.append(current_word)
         token = tokenizer.decode(token_id).strip()
-        current_char += len(token)
-        if current_char + 1 < len(sentence) and sentence[current_char] == " ":
+        current_partial_word.append(token_id)
+        # print(token_id, token, current_partial_word, words[current_word])
+        if (
+            tokenizer.decode(current_partial_word).strip().lower()
+            == words[current_word].strip().lower()
+        ):
             current_word += 1
-            current_char += 1
+            current_partial_word = []
 
+    # print(sentence, words_ids)
     return words_ids
 
 
 def auto_detect_if_we_need_to_add_spaces_around_tags(
-    tokenizer: PreTrainedTokenizerBase,
+    tokenizer: PreTrainedTokenizerBase, verbosity: str = True
 ) -> str:
     """
     Auto-detect how we need to format the target sentence depending on the tokenizer. Modes:
@@ -147,13 +154,14 @@ def auto_detect_if_we_need_to_add_spaces_around_tags(
     # adding spaces around tags gives better results
     # So we will always return "together" for T5 tokenizer
     if "t5" in tokenizer.__class__.__name__.lower():
-        print(
-            "We have auto-detected that the tokenizer is a T5 tokenizer.\n"
-            "We will tokenize the target sentence as follows: <Person>Obama</Person>went to<Location>New York</Location>.\n"
-            "If the contrained F1 score is lower than expected, or the unconstrained F1 score is higher than the constrained F1 score, "
-            "it is probably related to the tokenization of the target sentence. Open an issue on the GitHub repository or"
-            "manually edit the `auto_detect_if_we_need_to_add_spaces_around_tags` function in the `dataset.py` file."
-        )
+        if verbosity:
+            print(
+                "We have auto-detected that the tokenizer is a T5 tokenizer.\n"
+                "We will tokenize the target sentence as follows: <Person>Obama</Person>went to<Location>New York</Location>.\n"
+                "If the contrained F1 score is lower than expected, or the unconstrained F1 score is higher than the constrained F1 score, "
+                "it is probably related to the tokenization of the target sentence. Open an issue on the GitHub repository or"
+                "manually edit the `auto_detect_if_we_need_to_add_spaces_around_tags` function in the `dataset.py` file."
+            )
         return "together"
 
     def compare_tokenizations(labeled: List[int], unlabeled: List[int]):
@@ -206,49 +214,52 @@ def auto_detect_if_we_need_to_add_spaces_around_tags(
     labeled = tokenizer.encode(labeled, add_special_tokens=False)
 
     if compare_tokenizations(labeled, unlabeled):
-        print(
-            "We have auto-detected that the tokenizer for the model requires no whitespace around tags.\n"
-            "We will tokenize the target sentence as follows: <Person>Obama</Person>went to<Location>New York</Location>.\n"
-            "If the contrained F1 score is lower than expected, or the unconstrained F1 score is higher than the constrained F1 score, "
-            "it is probably related to the tokenization of the target sentence. Open an issue on the GitHub repository or "
-            "manually edit the `auto_detect_if_we_need_to_add_spaces_around_tags` function in the `dataset.py` file."
-        )
+        if verbosity:
+            print(
+                "We have auto-detected that the tokenizer for the model requires no whitespace around tags.\n"
+                "We will tokenize the target sentence as follows: <Person>Obama</Person>went to<Location>New York</Location>.\n"
+                "If the contrained F1 score is lower than expected, or the unconstrained F1 score is higher than the constrained F1 score, "
+                "it is probably related to the tokenization of the target sentence. Open an issue on the GitHub repository or "
+                "manually edit the `auto_detect_if_we_need_to_add_spaces_around_tags` function in the `dataset.py` file."
+            )
         return "together"
 
     # Test after
     labeled = "President<Person> Obama</Person> president"
     labeled = tokenizer.encode(labeled, add_special_tokens=False)
     if compare_tokenizations(labeled, unlabeled):
-        print(
-            "We have auto-detected that the tokenizer for the model requires a whitespace after tags.\n"
-            "We will tokenize the target sentence as follows: <Person> Obama</Person> went to<Location> New York</Location>.\n"
-            "If the contrained F1 score is lower than expected, or the unconstrained F1 score is higher than the constrained F1 score, "
-            "it is probably related to the tokenization of the target sentence. Open an issue on the GitHub repository or"
-            "manually edit the `auto_detect_if_we_need_to_add_spaces_around_tags` function in the `dataset.py` file."
-        )
+        if verbosity:
+            print(
+                "We have auto-detected that the tokenizer for the model requires a whitespace after tags.\n"
+                "We will tokenize the target sentence as follows: <Person> Obama</Person> went to<Location> New York</Location>.\n"
+                "If the contrained F1 score is lower than expected, or the unconstrained F1 score is higher than the constrained F1 score, "
+                "it is probably related to the tokenization of the target sentence. Open an issue on the GitHub repository or"
+                "manually edit the `auto_detect_if_we_need_to_add_spaces_around_tags` function in the `dataset.py` file."
+            )
         return "after"
 
     # Test both
     labeled = "President <Person> Obama </Person> president"
     labeled = tokenizer.encode(labeled, add_special_tokens=False)
     if compare_tokenizations(labeled, unlabeled):
-        print(
-            "We have auto-detected that the tokenizer for the model requires a whitespace before and after tags.\n"
-            "We will tokenize the target sentence as follows: <Person> Obama </Person> went to <Location> New York </Location>.\n"
-            "If the contrained F1 score is lower than expected, or the unconstrained F1 score is higher than the constrained F1 score, "
-            "it is probably related to the tokenization of the target sentence. Open an issue on the GitHub repository or "
-            "manually edit the `auto_detect_if_we_need_to_add_spaces_around_tags` function in the `dataset.py` file."
-        )
+        if verbosity:
+            print(
+                "We have auto-detected that the tokenizer for the model requires a whitespace before and after tags.\n"
+                "We will tokenize the target sentence as follows: <Person> Obama </Person> went to <Location> New York </Location>.\n"
+                "If the contrained F1 score is lower than expected, or the unconstrained F1 score is higher than the constrained F1 score, "
+                "it is probably related to the tokenization of the target sentence. Open an issue on the GitHub repository or "
+                "manually edit the `auto_detect_if_we_need_to_add_spaces_around_tags` function in the `dataset.py` file."
+            )
         return "both"
-
-    print(
-        "WARNING!!! We could not auto-detect the correct tokenization mode for the target sentence. "
-        "We will use the default mode and add whitespaces around tags.\n"
-        "Here is an example <Person> Obama </Person> went to <Location> New York </Location>.\n"
-        "But this may not be the correct tokenization for the model. If the model does not perform well, "
-        "you may need to manually edit the `auto_detect_if_we_need_to_add_spaces_around_tags` function in the `dataset.py` file.\n"
-        "You can also open an issue on the GitHub repository."
-    )
+    if verbosity:
+        print(
+            "WARNING!!! We could not auto-detect the correct tokenization mode for the target sentence. "
+            "We will use the default mode and add whitespaces around tags.\n"
+            "Here is an example <Person> Obama </Person> went to <Location> New York </Location>.\n"
+            "But this may not be the correct tokenization for the model. If the model does not perform well, "
+            "you may need to manually edit the `auto_detect_if_we_need_to_add_spaces_around_tags` function in the `dataset.py` file.\n"
+            "You can also open an issue on the GitHub repository."
+        )
     return "both"
 
 
@@ -573,10 +584,16 @@ def batch_tokenization(
     batch_words: List[List[str]],
     batch_labels: List[List[str]],
     process_no: int,
+    verbosity: str = True,
 ):
     dataset = []
     for words, labels in zip(
-        tqdm(batch_words, desc=f"Data tokenization {process_no}", leave=True),
+        tqdm(
+            batch_words,
+            desc=f"Data tokenization {process_no}",
+            leave=True,
+            disable=not verbosity,
+        ),
         batch_labels,
     ):
         assert len(words) == len(labels)
@@ -609,6 +626,7 @@ class SequenceLabellingDataset(Dataset):
         input_prompt: Optional[str] = None,
         num_workers: int = 8,
         add_labels_as_context: bool = False,
+        verbosity: str = True,
     ):
         self.tokenizer = tokenizer
         self.file_path = file_path
@@ -616,8 +634,10 @@ class SequenceLabellingDataset(Dataset):
         self.max_target_len = max_target_len
         self.is_encoder_decoder = is_encoder_decoder
         self.train = train
-        self.task_labels = get_task_labels(filepath=file_path)
-        self.start_tags, self.end_tags = get_task_tags(filepath=file_path)
+        self.task_labels = get_task_labels(filepath=file_path, verbosity=verbosity)
+        self.start_tags, self.end_tags = get_task_tags(
+            filepath=file_path, verbosity=verbosity
+        )
         self.start_tags_original = self.start_tags.copy()
         # Add labels with space prefix
         self.start_tags += [f" {tag}" for tag in self.start_tags]
@@ -625,7 +645,7 @@ class SequenceLabellingDataset(Dataset):
         # self.task_labels += self.task_labels
 
         add_spaces_around_tags = auto_detect_if_we_need_to_add_spaces_around_tags(
-            tokenizer
+            tokenizer, verbosity=verbosity
         )
 
         self.start_labels_ids = [
@@ -634,9 +654,9 @@ class SequenceLabellingDataset(Dataset):
         self.end_labels_ids = [
             tokenizer.encode(tag, add_special_tokens=False) for tag in self.end_tags
         ]
-
-        print(f"Start labels ids: {self.start_labels_ids}")
-        print(f"End labels ids: {self.end_labels_ids}")
+        if verbosity:
+            print(f"Start labels ids: {self.start_labels_ids}")
+            print(f"End labels ids: {self.end_labels_ids}")
 
         if add_labels_as_context:
             if input_prompt:
@@ -646,9 +666,12 @@ class SequenceLabellingDataset(Dataset):
             else:
                 input_prompt = f"{' '.join(self.start_tags_original)} ".strip(" ")
 
-        dataset_words, dataset_labels = read_tsv(file_path)
+        dataset_words, dataset_labels = read_tsv(file_path, verbosity=verbosity)
 
-        print(f"Tokenizing {len(dataset_words)} sentences with {num_workers} workers")
+        if verbosity:
+            print(
+                f"Tokenizing {len(dataset_words)} sentences with {num_workers} workers"
+            )
 
         with Pool(num_workers) as p:
             dataset = p.starmap(
@@ -664,50 +687,19 @@ class SequenceLabellingDataset(Dataset):
                     batch(dataset_words, num_workers),
                     batch(dataset_labels, num_workers),
                     range(num_workers),
+                    itertools.repeat(verbosity),
                 ),
             )
 
         self.dataset = list(itertools.chain.from_iterable(dataset))
 
-        # for n, x in enumerate(self.dataset[:25]):
-        #    labels = x["labeled_sentence_ids"]
-        #    print(n)
-        #    print(
-        #        tokenizer.decode(
-        #            labels,
-        #            skip_special_tokens=False,
-        #            clean_up_tokenization_spaces=False,
-        #        )
-        #    )
-        #    print("==============================================================")
-
-        print(f"Dataset size: {len(self.dataset)}")
+        if verbosity:
+            print(f"Dataset size: {len(self.dataset)}")
 
     def __len__(self):
         return len(self.dataset)
 
     def __getitem__(self, idx):
-        """
-        print("================")
-        print("DATASET INPUTS IDS")
-        print(
-            self.tokenizer.batch_decode(
-                self.dataset[idx]["input_ids"],
-                skip_special_tokens=False,
-                clean_up_tokenization_spaces=False,
-            )
-        )
-
-        print("DATASET LABELS")
-        print(
-            self.tokenizer.batch_decode(
-                self.dataset[idx]["labels"],
-                skip_special_tokens=False,
-                clean_up_tokenization_spaces=False,
-            )
-        )
-        """
-
         return self.dataset[idx].copy()
 
 
@@ -902,6 +894,7 @@ def get_dataloader(
     input_prompt,
     num_workers,
     add_labels_as_context,
+    verbosity: bool = True,
 ):
     if len(filenames) == 1:
         dataset = SequenceLabellingDataset(
@@ -914,6 +907,7 @@ def get_dataloader(
             input_prompt=input_prompt,
             num_workers=num_workers,
             add_labels_as_context=add_labels_as_context,
+            verbosity=verbosity,
         )
 
         data_collator = DataCollatorForSeq2Seq(
@@ -946,6 +940,7 @@ def get_dataloader(
                     input_prompt=input_prompt,
                     num_workers=num_workers,
                     add_labels_as_context=add_labels_as_context,
+                    verbosity=verbosity,
                 )
             )
 
