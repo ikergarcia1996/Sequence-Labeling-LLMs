@@ -3,6 +3,7 @@ from typing import Dict, List, Union
 
 import torch
 from transformers import BatchEncoding, PreTrainedModel
+from transformers.cache_utils import DynamicCache, EncoderDecoderCache
 
 
 def compute_words_ids(tokenizer, sentence):
@@ -773,15 +774,20 @@ def run_model(
     decoder_args: Dict,
     is_encoder_decoder: bool,
 ):
+    # print(decoder_args.keys())
+
     gen_inputs = model.prepare_inputs_for_generation(
         input_ids=input_ids, **decoder_args
     )
 
-    # print(gen_inputs["input_ids"].size())
     decoder_outputs = model(
         **gen_inputs,
         return_dict=True,
     )
+
+    logits = decoder_outputs.logits
+    logits = logits[:, -1, :]
+    logits = torch.nn.functional.softmax(logits, dim=-1)
 
     decoder_args = model._update_model_kwargs_for_generation(
         decoder_outputs,
@@ -789,9 +795,8 @@ def run_model(
         is_encoder_decoder=is_encoder_decoder,
     )
 
-    logits = decoder_outputs.logits
-    logits = logits[:, -1, :]
-    logits = torch.nn.functional.softmax(logits, dim=-1)
+    del decoder_outputs
+
     return logits, decoder_args
 
 
@@ -890,8 +895,11 @@ def constrained_beam_search(
             "top_p": None,
         }
         generation_config = copy.deepcopy(model.generation_config)
-        model_kwargs = generation_config.update(**kwargs)
+        generation_config, model_kwargs = model._prepare_generation_config(
+            generation_config, **kwargs
+        )
         model_kwargs["use_cache"] = use_cache
+        #print(model_kwargs)
 
         generation_config.validate()
         model._validate_model_kwargs(model_kwargs.copy())
@@ -900,11 +908,20 @@ def constrained_beam_search(
             encoder_inputs, model.generation_config.decoder_start_token_id, model_kwargs
         )
 
+        model._prepare_special_tokens(
+            generation_config,
+            model_kwargs.get("attention_mask", None) is not None,
+            device=inputs_tensor.device,
+        )
+
         if model.config.is_encoder_decoder and "encoder_outputs" not in model_kwargs:
             # if model is encoder decoder encoder_outputs are created
             # and added to `model_kwargs`
             model_kwargs = model._prepare_encoder_decoder_kwargs_for_generation(
-                inputs_tensor, model_kwargs, model_input_name
+                inputs_tensor,
+                model_kwargs,
+                model_input_name,
+                generation_config=generation_config,
             )
 
         # 5. Prepare `input_ids` which will be used for auto-regressive generation
@@ -913,8 +930,10 @@ def constrained_beam_search(
                 batch_size=8,
                 model_input_name=model_input_name,
                 model_kwargs=model_kwargs,
-                decoder_start_token_id=generation_config.decoder_start_token_id,
-                bos_token_id=generation_config.bos_token_id,
+                decoder_start_token_id=torch.tensor(
+                    generation_config.decoder_start_token_id
+                ),
+                # bos_token_id=generation_config.bos_token_id,
                 device=inputs_tensor.device,
             )
         else:
@@ -923,6 +942,32 @@ def constrained_beam_search(
                 if model_input_name == "input_ids"
                 else model_kwargs.pop("input_ids")
             )
+
+        if (
+            generation_config.cache_implementation is None
+            and model._supports_default_dynamic_cache()
+        ):
+            past = model_kwargs.get("past_key_values", None)
+            requires_cross_attention_cache = (
+                model.config.is_encoder_decoder
+                or model_kwargs.get("encoder_outputs") is not None
+            )
+            if past is None:
+                model_kwargs["past_key_values"] = (
+                    DynamicCache()
+                    if not requires_cross_attention_cache
+                    else EncoderDecoderCache(DynamicCache(), DynamicCache())
+                )
+                use_dynamic_cache_by_default = True
+            elif isinstance(past, tuple):
+                model_kwargs["past_key_values"] = (
+                    DynamicCache.from_legacy_cache(past)
+                    if not requires_cross_attention_cache
+                    else EncoderDecoderCache.from_legacy_cache(past)
+                )
+                use_dynamic_cache_by_default = True
+
+        model_kwargs = model._get_initial_cache_position(input_ids, model_kwargs)
 
         first = True
         while not all([sent.is_completed() for sent in sentence_beams]):
@@ -953,8 +998,8 @@ def constrained_beam_search(
                 ]  # Adjust indices for each sentence in batch
                 beam_idx.extend(sent_idx)
 
-            if model_kwargs["past_key_values"] is not None:
-                model_kwargs["past_key_values"] = model._reorder_cache(
+            if model_kwargs.get("past_key_values", None) is not None:
+                model_kwargs["past_key_values"] = model._temporary_reorder_cache(
                     model_kwargs["past_key_values"], torch.tensor(beam_idx)
                 )
             else:
